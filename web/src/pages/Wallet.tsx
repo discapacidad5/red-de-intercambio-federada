@@ -181,12 +181,12 @@ export default function Wallet() {
           </div>
         ) : (
           <div className="space-y-2 max-h-[600px] overflow-y-auto">
-            {filteredTxs.map((t, i) => {
-              const dir = getDirection(t)
+            {filteredTxs.map((tx, i) => {
+              const dir = getDirection(tx)
               const isDebit = dir === 'debit'
-              const fromName = t.sender_display || t.from_user || t.sender_name || '???'
-              const toName = t.receiver_display || t.to_user || t.receiver_name || '???'
-              const amount = Math.abs(t.amount || 0)
+              const fromName = tx.sender_display || tx.from_user || tx.sender_name || '???'
+              const toName = tx.receiver_display || tx.to_user || tx.receiver_name || '???'
+              const amount = Math.abs(tx.amount || 0)
 
               return (
                 <div key={i} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
@@ -202,8 +202,8 @@ export default function Wallet() {
                         <span className="font-semibold">{isDebit ? toName : fromName}</span>
                       </p>
                       <p className="text-xs text-gray-500">
-                        {t.created_at?.slice(0, 16).replace('T', ' ')}
-                        {t.description ? ` - ${t.description}` : ''}
+                        {tx.created_at?.slice(0, 16).replace('T', ' ')}
+                        {tx.description ? ` - ${tx.description}` : ''}
                       </p>
                     </div>
                   </div>
