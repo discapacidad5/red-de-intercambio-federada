@@ -348,5 +348,14 @@
   "operations_product_help": "Selecciona un producto existente en el catalogo. Busca por nombre o descripcion. Ej: Harina de trigo, Energia solar.",
   "operations_product_ph": "Ej: Harina de trigo, Energia solar...",
   "calc_external_formula": "precio externo = precio",
-  "operations_no_products": "No se encontraron productos"
+  "operations_no_products": "No se encontraron productos",
+  "ph_bank_usd": "Ej: Banco Nacional USD",
+  "ph_bank": "Ej: Banco Nacional",
+  "ph_country_codes": "Ej: VE, CO, US",
+  "ph_product": "Ej: Harina de trigo",
+  "ph_supplier": "Ej: Distribuidora Andina",
+  "ph_product2": "Ej: Cafe organico",
+  "ph_exporter": "Ej: Cooperativa de Exportacion",
+  "ph_units": "kg, litros, unidades...",
+  "ph_units2": "kg, litros..."
 }

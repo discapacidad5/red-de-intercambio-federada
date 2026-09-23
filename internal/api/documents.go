@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -70,6 +71,20 @@ func (h *DocumentsHandler) listCountries(w http.ResponseWriter, r *http.Request)
 	if countries == nil {
 		countries = []map[string]interface{}{}
 	}
+	// Localizar nombre del pais (fuente: spanish_name; entity 'country')
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, "__GLOBAL__")
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(countries))
+		for _, c := range countries {
+			keys = append(keys, "country:"+fmt.Sprint(c["iso2"])+":name")
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, c := range countries {
+			if v := values["country:"+fmt.Sprint(c["iso2"])+":name"]; v != "" {
+				c["name"] = v
+			}
+		}
+	}
 	writeJSON(w, 200, countries)
 }
 
@@ -102,6 +117,20 @@ func (h *DocumentsHandler) listDocumentTypes(w http.ResponseWriter, r *http.Requ
 	}
 	if types == nil {
 		types = []map[string]interface{}{}
+	}
+	// Localizar nombre del tipo de documento (fuente: spanish_name)
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, "__GLOBAL__")
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(types))
+		for _, tp := range types {
+			keys = append(keys, "document_type:"+fmt.Sprint(tp["code"])+":name")
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, tp := range types {
+			if v := values["document_type:"+fmt.Sprint(tp["code"])+":name"]; v != "" {
+				tp["name"] = v
+			}
+		}
 	}
 	writeJSON(w, 200, types)
 }
@@ -158,10 +187,23 @@ func (h *DocumentsHandler) listMyDocuments(w http.ResponseWriter, r *http.Reques
 	if docs == nil {
 		docs = []map[string]interface{}{}
 	}
+	// Localizar el nombre del tipo de documento mostrado al usuario
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, "__GLOBAL__")
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(docs))
+		for _, d := range docs {
+			keys = append(keys, "document_type:"+fmt.Sprint(d["document_type"])+":name")
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, d := range docs {
+			if v := values["document_type:"+fmt.Sprint(d["document_type"])+":name"]; v != "" {
+				d["document_type_name"] = v
+			}
+		}
+	}
 	writeJSON(w, 200, docs)
 }
 
-// addMyDocument agrega un documento al usuario autenticado
 // Acepta JSON normal o multipart/form-data con foto del documento
 func (h *DocumentsHandler) addMyDocument(w http.ResponseWriter, r *http.Request) {
 	am := NewAuthMiddleware(h.JWTSecret)

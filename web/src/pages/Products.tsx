@@ -48,7 +48,7 @@ type ProductTab = 'federated' | 'mynode' | 'composite'
 type MyNodeSubTab = 'allowed' | 'disallowed'
 
 export default function Products() {
-  const { t } = useTranslation(['products', 'common'])
+  const { t, i18n } = useTranslation(['products', 'common'])
   const tc = (name: string) => t(`category.${name}`, { ns: 'products', defaultValue: name })
   const { hasPermission } = usePermissions()
   const { currency } = useConfig()
@@ -174,7 +174,7 @@ export default function Products() {
       loadFederated()
       loadFedNodes()
     }
-  }, [activeTab, searchTerm, mynodeSubTab, fedNodeFilter])
+  }, [activeTab, searchTerm, mynodeSubTab, fedNodeFilter, i18n.language])
 
   // Cargar propuestas de productos federados pendientes
   const loadFedProposals = () => {

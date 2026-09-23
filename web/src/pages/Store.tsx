@@ -19,7 +19,7 @@ interface CompositeComponent {
 }
 
 export default function Store() {
-  const { t } = useTranslation(['products', 'common'])
+  const { t, i18n } = useTranslation(['products', 'common'])
   const tc = (name: string) => t(`category.${name}`, { ns: 'products', defaultValue: name })
   const { currency } = useConfig()
   const [view, setView] = useState<'mine' | 'browse'>('mine')
@@ -80,14 +80,14 @@ export default function Store() {
     api.get('/store/all').then((d: any) => setAllStores(Array.isArray(d) ? d : [])).catch(() => {})
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [i18n.language])
 
   // Cargar jerarquia de categorias (3 niveles)
   useEffect(() => {
     api.get('/products/categories')
       .then((d: any) => setHierarchy(Array.isArray(d?.categories) ? d.categories : []))
       .catch(() => setHierarchy([]))
-  }, [])
+  }, [i18n.language])
 
   // Cargar componentes disponibles del catalogo (para el modal)
   const [modalLoading, setModalLoading] = useState(false)
@@ -529,7 +529,7 @@ export default function Store() {
                               value={yieldProducts}
                               onChange={(e) => setYieldProducts(parseInt(e.target.value) || 0)}
                             />
-                            <p className="text-xs text-gray-400 mt-1">Ej: 50 envases de 200ml</p>
+                            <p className="text-xs text-gray-400 mt-1">{t('store_yield_hint', 'E.g.: 50 containers of 200ml')}</p>
                           </div>
                         </div>
                         {yieldProducts > 0 && qtyPurchased > 0 && (
@@ -635,7 +635,7 @@ export default function Store() {
                     </div>
                     <div>
                       <label className="label">{t('store_units_per_package', 'Unidades por paquete')}</label>
-                      <input type="number" step="0.1" className="input" placeholder="Ej: 1, 0.5, 2" value={form.quantity_per_unit} onChange={(e) => setForm({ ...form, quantity_per_unit: parseFloat(e.target.value) || 1 })} />
+                      <input type="number" step="0.1" className="input" placeholder={t('store_units_ph', 'E.g.: 1, 0.5, 2')} value={form.quantity_per_unit} onChange={(e) => setForm({ ...form, quantity_per_unit: parseFloat(e.target.value) || 1 })} />
                     </div>
                   </div>
 

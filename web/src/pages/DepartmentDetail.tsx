@@ -26,7 +26,7 @@ interface Member {
 }
 
 export default function DepartmentDetail() {
-  const { t } = useTranslation(['organizations', 'common'])
+  const { t, i18n } = useTranslation(['organizations', 'common'])
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { currency } = useConfig()
@@ -81,7 +81,7 @@ export default function DepartmentDetail() {
 
   useEffect(() => {
     load()
-  }, [id])
+  }, [id, i18n.language])
 
   const createRole = async () => {
     setError('')

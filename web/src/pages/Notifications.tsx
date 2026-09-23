@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { getNotifIcon, relativeTime } from '../lib/notifications'
+import { getNotifIcon, relativeTime, notifText } from '../lib/notifications'
 import { useTranslation } from 'react-i18next'
 import { Bell, Check, CheckCheck, Trash2, Filter } from 'lucide-react'
 
 export default function Notifications() {
   const navigate = useNavigate()
-  const { t } = useTranslation(['notifications', 'common'])
+  const { t, i18n } = useTranslation(['notifications', 'common'])
   const [notifications, setNotifications] = useState<any[]>([])
   const [filter, setFilter] = useState<'all' | 'unread' | 'read'>('all')
   const [loading, setLoading] = useState(true)
@@ -15,7 +15,7 @@ export default function Notifications() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [i18n.language])
 
   const load = () => {
     setLoading(true)
@@ -119,18 +119,18 @@ export default function Notifications() {
                 <NotifIcon size={20} className={`${iconColor} flex-shrink-0 mt-0.5`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800">{n.title}</p>
+                    <p className="text-sm font-medium text-gray-800">{notifText(n, 'title')}</p>
                     {!n.is_read && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />}
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{n.message}</p>
+                  <p className="text-sm text-gray-600 mt-1">{notifText(n, 'message')}</p>
                   <div className="flex items-center justify-between mt-2">
                     <p className="text-xs text-gray-400">{relativeTime(n.created_at)}</p>
                     <div className="flex items-center gap-2">
-                      {n.link && <span className="text-xs text-blue-600">Ver mas</span>}
+                      {n.link && <span className="text-xs text-blue-600">{t('see_more', 'See more')}</span>}
                       <button
                         onClick={(e) => deleteNotif(n.id, e)}
                         className="text-gray-400 hover:text-red-600"
-                        title="Eliminar"
+                        title={t('common:delete', 'Delete')}
                       >
                         <Trash2 size={14} />
                       </button>

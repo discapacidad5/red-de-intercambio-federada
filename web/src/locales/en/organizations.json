@@ -327,5 +327,6 @@
   "org_help_board_title": "What is an organization's board of directors",
   "org_help_board_body": "The board of directors is the group of people elected to lead and represent the organization. It is responsible for coordinating activities, managing resources and making decisions on behalf of the members.",
   "org_help_decisions_title": "How decisions are made in an organization",
-  "org_help_decisions_body": "Decisions can be made by consensus, voting or delegation according to each organization's bylaws. Generally, the member assembly defines the rules and the board of directors executes what was agreed."
+  "org_help_decisions_body": "Decisions can be made by consensus, voting or delegation according to each organization's bylaws. Generally, the member assembly defines the rules and the board of directors executes what was agreed.",
+  "departments_modal_type_help": "Define the nature of the group. Department = permanent work area (e.g. Production). Council = decision group (e.g. Board of Directors). Committee = temporary group for a task (e.g. Events Committee)."
 }

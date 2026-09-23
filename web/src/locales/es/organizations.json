@@ -327,5 +327,6 @@
   "org_help_board_title": "Que es la junta directiva de una organizacion",
   "org_help_board_body": "La junta directiva es el grupo de personas elegidas para dirigir y representar a la organizacion. Se encarga de coordinar las actividades, administrar los recursos y tomar decisiones en nombre de los miembros.",
   "org_help_decisions_title": "Como se toman decisiones en una organizacion",
-  "org_help_decisions_body": "Las decisiones pueden tomarse por consenso, votacion o delegacion segun los estatutos de cada organizacion. Generalmente la asamblea de miembros define las reglas y la junta directiva ejecuta lo acordado."
+  "org_help_decisions_body": "Las decisiones pueden tomarse por consenso, votacion o delegacion segun los estatutos de cada organizacion. Generalmente la asamblea de miembros define las reglas y la junta directiva ejecuta lo acordado.",
+  "departments_modal_type_help": "Define la naturaleza del grupo. Departamento = area permanente de trabajo (ej: Produccion). Consejo = grupo de decision (ej: Consejo de Administracion). Comision = grupo temporal para una tarea (ej: Comision de Eventos)."
 }

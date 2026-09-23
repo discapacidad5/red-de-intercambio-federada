@@ -46,10 +46,14 @@ export function PublicFederationPage({
   const [demoError, setDemoError] = useState(false)
 
   // Estado para edicion en vivo in-situ con soporte multi-idioma en memoria local
-  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es'
+  const currentLang = (i18n.language || 'es').split('-')[0]
   const [draftsByLang, setDraftsByLang] = useState<Record<string, { title?: string; subtitle?: string }>>({})
   const [saving, setSaving] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
+  const [enabledLangs, setEnabledLangs] = useState<{ code: string; native_name: string }[]>([
+    { code: 'es', native_name: 'Español' },
+    { code: 'en', native_name: 'English' },
+  ])
 
   // Obtener el valor actual del idioma activo: borrador local si existe, o prop del backend, o traducción por defecto
   const activeTitle = draftsByLang[currentLang]?.title !== undefined
@@ -105,14 +109,18 @@ export function PublicFederationPage({
         show_in_menu: true,
       })
 
-      // Si también se modificó el otro idioma en local, guardarlo para no perderlo
-      const otherLang = currentLang === 'en' ? 'es' : 'en'
-      if (draftsByLang[otherLang]?.title !== undefined || draftsByLang[otherLang]?.subtitle !== undefined) {
+      // Guardar borradores de TODOS los otros idiomas editados en local
+      const defaultTitles: Record<string, string> = { es: 'Federación', en: 'Federation' }
+      const defaultSubs: Record<string, string> = { es: 'Suma tu ecoaldea a la red', en: 'Join your eco-village to the network' }
+      for (const otherLang of Object.keys(draftsByLang)) {
+        if (otherLang === currentLang) continue
+        const d = draftsByLang[otherLang]
+        if (d?.title === undefined && d?.subtitle === undefined) continue
         try {
           await api.put(`/site/pages/by-slug/federacion?lang=${otherLang}`, {
             slug: 'federacion',
-            title: draftsByLang[otherLang]?.title || (otherLang === 'en' ? 'Federation' : 'Federación'),
-            subtitle: draftsByLang[otherLang]?.subtitle || (otherLang === 'en' ? 'Join your eco-village to the network' : 'Suma tu ecoaldea a la red'),
+            title: d?.title || defaultTitles[otherLang] || titleToSave,
+            subtitle: d?.subtitle || defaultSubs[otherLang] || subtitleToSave,
             content: '[]',
             icon: 'globe',
             menu_order: 95,
@@ -136,6 +144,12 @@ export function PublicFederationPage({
   useEffect(() => {
     api.get('/public/proposals').then((d: any) => {
       setProposals(Array.isArray(d) ? d : [])
+    }).catch(() => {})
+
+    // Idiomas habilitados para el toggle de edicion
+    api.get('/languages').then((d: any) => {
+      const langs = (Array.isArray(d) ? d : []).filter((l: any) => l.enabled)
+      if (langs.length) setEnabledLangs(langs.map((l: any) => ({ code: l.code, native_name: l.native_name })))
     }).catch(() => {})
 
     // Verificar estado del nodo demo
@@ -285,28 +299,20 @@ export function PublicFederationPage({
             {/* Selector de idioma que traduce toda la ventana de federacion */}
             <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5 border border-white/20">
               <Languages size={14} className="text-emerald-200 ml-1.5" />
-              <button
-                type="button"
-                onClick={() => handleSwitchLanguage('es')}
-                className={`px-2 py-0.5 rounded text-xs font-bold transition ${
-                  currentLang === 'es'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-emerald-100 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                ES
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSwitchLanguage('en')}
-                className={`px-2 py-0.5 rounded text-xs font-bold transition ${
-                  currentLang === 'en'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-emerald-100 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                EN
-              </button>
+              {enabledLangs.map((l) => (
+                <button
+                  key={l.code}
+                  type="button"
+                  onClick={() => handleSwitchLanguage(l.code)}
+                  className={`px-2 py-0.5 rounded text-xs font-bold transition ${
+                    currentLang === l.code
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-emerald-100 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {l.code.toUpperCase()}
+                </button>
+              ))}
             </div>
 
             <button
@@ -331,10 +337,10 @@ export function PublicFederationPage({
               <button
                 onClick={onExit}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition border border-white/15"
-                title="Salir del modo edición"
+                title={t('website:editor_exit_hint', 'Exit edit mode')}
               >
                 <Eye size={14} />
-                <span className="hidden sm:inline">Salir</span>
+                <span className="hidden sm:inline">{t('website:editor_exit', 'Exit')}</span>
               </button>
             )}
           </div>

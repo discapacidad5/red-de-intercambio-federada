@@ -311,5 +311,7 @@
     "Cursos": "Cursos",
     "Tutorias": "Tutorias",
     "Materiales Educativos": "Materiales Educativos"
-  }
+  },
+  "store_yield_hint": "Ej: 50 envases de 200ml",
+  "store_units_ph": "Ej: 1, 0.5, 2"
 }

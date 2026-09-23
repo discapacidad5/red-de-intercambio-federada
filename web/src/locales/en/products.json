@@ -311,5 +311,7 @@
     "Cursos": "Courses",
     "Tutorias": "Tutoring",
     "Materiales Educativos": "Educational Materials"
-  }
+  },
+  "store_yield_hint": "E.g.: 50 containers of 200ml",
+  "store_units_ph": "E.g.: 1, 0.5, 2"
 }

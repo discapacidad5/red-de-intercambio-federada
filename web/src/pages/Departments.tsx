@@ -43,7 +43,7 @@ interface Permission {
 }
 
 export default function Departments() {
-  const { t } = useTranslation(['organizations', 'common'])
+  const { t, i18n } = useTranslation(['organizations', 'common'])
   const navigate = useNavigate()
   const { hasPermission } = usePermissions()
   const [departments, setDepartments] = useState<Department[]>([])
@@ -69,7 +69,7 @@ export default function Departments() {
     loadPermissions()
     loadOrganizations()
     loadUsers()
-  }, [])
+  }, [i18n.language])
 
   const loadDepartments = async () => {
     try {
@@ -419,7 +419,7 @@ export default function Departments() {
                 <option value="council">{t('departments_modal_type_council', 'Consejo (grupo de decision)')}</option>
                 <option value="committee">{t('departments_modal_type_committee', 'Comision (grupo temporal)')}</option>
               </select>
-              <p className="text-xs text-gray-400 mt-1">Define la naturaleza del grupo. <em>Departamento</em> = area permanente de trabajo (ej: Produccion). <em>Consejo</em> = grupo de decision (ej: Consejo de Administracion). <em>Comision</em> = grupo temporal para una tarea (ej: Comision de Eventos).</p>
+              <p className="text-xs text-gray-400 mt-1">{t('departments_modal_type_help', 'Define the nature of the group. Department = permanent work area (e.g. Production). Council = decision group (e.g. Board of Directors). Committee = temporary group for a task (e.g. Events Committee).')}</p>
             </div>
             <div>
               <label className="label">{t('departments_modal_belongs_to', 'Pertenece a')}</label>

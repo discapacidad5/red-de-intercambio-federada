@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -124,6 +125,10 @@ func (h *MyMembershipHandler) myOrganizations(w http.ResponseWriter, r *http.Req
 	if orgs == nil {
 		orgs = []map[string]interface{}{}
 	}
+	var userNodeDomain string
+	_ = h.Pool.QueryRow(r.Context(), `SELECT node_domain FROM users WHERE id = $1`, userID).Scan(&userNodeDomain)
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, userNodeDomain)
+	localizeEntityMaps(r.Context(), h.Pool, orgs, "organization", lang, fallbackLang, "display_name")
 	writeJSON(w, 200, orgs)
 }
 
@@ -138,7 +143,7 @@ func (h *MyMembershipHandler) myDepartments(w http.ResponseWriter, r *http.Reque
 	rows, err := h.Pool.Query(r.Context(), `
 		SELECT
 			d.id, d.name, d.description, d.group_type,
-			dr.name as role_name, dr.description as role_desc,
+			dr.id, dr.name as role_name, dr.description as role_desc,
 			da.username as dept_account, da.id as dept_account_id, da.balance
 		FROM department_members dm
 		JOIN departments d ON dm.department_id = d.id
@@ -158,12 +163,13 @@ func (h *MyMembershipHandler) myDepartments(w http.ResponseWriter, r *http.Reque
 	for rows.Next() {
 		var id uuid.UUID
 		var name, desc, groupType string
+		var roleID *uuid.UUID
 		var roleName, roleDesc *string
 		var deptAccount *string
 		var deptAccountID *uuid.UUID
 		var balance *int
 
-		if err := rows.Scan(&id, &name, &desc, &groupType, &roleName, &roleDesc, &deptAccount, &deptAccountID, &balance); err != nil {
+		if err := rows.Scan(&id, &name, &desc, &groupType, &roleID, &roleName, &roleDesc, &deptAccount, &deptAccountID, &balance); err != nil {
 			continue
 		}
 
@@ -189,6 +195,9 @@ func (h *MyMembershipHandler) myDepartments(w http.ResponseWriter, r *http.Reque
 			"can_manage":   canManage,
 			"can_transfer": canTransfer,
 		}
+		if roleID != nil {
+			dept["_role_id"] = roleID.String()
+		}
 		if deptAccount != nil {
 			dept["account_username"] = *deptAccount
 		}
@@ -204,6 +213,32 @@ func (h *MyMembershipHandler) myDepartments(w http.ResponseWriter, r *http.Reque
 	if depts == nil {
 		depts = []map[string]interface{}{}
 	}
+	var deptNodeDomain string
+	_ = h.Pool.QueryRow(r.Context(), `SELECT node_domain FROM users WHERE id = $1`, userID).Scan(&deptNodeDomain)
+	dlang, dfallback := resolveRequestLanguages(r, h.Pool, deptNodeDomain)
+	localizeEntityMaps(r.Context(), h.Pool, depts, "department", dlang, dfallback, "name", "description")
+	// Localizar el nombre del rol (entity 'department_role', clave por role_id)
+	if !strings.EqualFold(dlang, dfallback) {
+		roleKeys := make([]string, 0, len(depts))
+		for _, d := range depts {
+			if rid, ok := d["_role_id"].(string); ok && rid != "" {
+				roleKeys = append(roleKeys, "department_role:"+rid+":name")
+			}
+		}
+		roleVals := localizedContentValues(r.Context(), h.Pool, roleKeys, dlang)
+		for _, d := range depts {
+			if rid, ok := d["_role_id"].(string); ok {
+				if v := roleVals["department_role:"+rid+":name"]; v != "" {
+					d["role"] = v
+				}
+			}
+			delete(d, "_role_id")
+		}
+	} else {
+		for _, d := range depts {
+			delete(d, "_role_id")
+		}
+	}
 	writeJSON(w, 200, depts)
 }
 
@@ -216,15 +251,27 @@ func (h *MyMembershipHandler) myAssembly(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Obtener info del usuario (nivel, si es super admin, etc)
-	var username, displayName, accountType, levelName string
+	var username, displayName, accountType, levelName, userNodeDomain string
 	var isSuperAdmin bool
 	var memberLevelID *uuid.UUID
 	h.Pool.QueryRow(r.Context(), `
 		SELECT u.username, u.display_name, u.account_type,
-		       COALESCE(ml.name, ''), u.is_super_admin, u.member_level_id
+		       COALESCE(ml.name, ''), u.is_super_admin, u.member_level_id, u.node_domain
 		FROM users u
 		LEFT JOIN member_levels ml ON u.member_level_id = ml.id
-		WHERE u.id = $1`, userID).Scan(&username, &displayName, &accountType, &levelName, &isSuperAdmin, &memberLevelID)
+		WHERE u.id = $1`, userID).Scan(&username, &displayName, &accountType, &levelName, &isSuperAdmin, &memberLevelID, &userNodeDomain)
+
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, userNodeDomain)
+
+	// Nombre de nivel traducido si existe traduccion
+	if memberLevelID != nil && !strings.EqualFold(lang, fallbackLang) {
+		var trName string
+		if err := h.Pool.QueryRow(r.Context(),
+			`SELECT name FROM member_level_translations WHERE level_id = $1 AND language = $2`,
+			*memberLevelID, lang).Scan(&trName); err == nil && trName != "" {
+			levelName = trName
+		}
+	}
 
 	// Determinar permisos en asamblea
 	canVote := false
@@ -279,6 +326,7 @@ func (h *MyMembershipHandler) myAssembly(w http.ResponseWriter, r *http.Request)
 	if sessions == nil {
 		sessions = []map[string]interface{}{}
 	}
+	localizeEntityMaps(r.Context(), h.Pool, sessions, "assembly_session", lang, fallbackLang, "title", "description")
 
 	writeJSON(w, 200, map[string]interface{}{
 		"user": map[string]interface{}{

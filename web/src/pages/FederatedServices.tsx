@@ -52,14 +52,6 @@ const iconMap: Record<string, any> = {
   Phone, Mic, Cloud, FileText, BookMarked, Globe, Film, Music, GitBranch, GraduationCap, Home, Lock,
 }
 
-const categoryLabels: Record<string, string> = {
-  social: 'Redes Sociales',
-  comunicacion: 'Comunicacion',
-  productividad: 'Productividad',
-  multimedia: 'Multimedia',
-  desarrollo: 'Desarrollo y Otros',
-}
-
 const categoryColors: Record<string, string> = {
   social: 'bg-purple-100 text-purple-700',
   comunicacion: 'bg-blue-100 text-blue-700',
@@ -69,7 +61,7 @@ const categoryColors: Record<string, string> = {
 }
 
 export default function FederatedServices() {
-  const { t } = useTranslation(['services', 'common'])
+  const { t, i18n } = useTranslation(['services', 'common'])
   const { node_domain: nodeDomain } = useConfig()
   const isDemoNode = (window as any).__BASE_PATH__ === '/demo'
   const [services, setServices] = useState<ServiceItem[]>([])
@@ -98,7 +90,7 @@ export default function FederatedServices() {
   useEffect(() => {
     loadServices()
     loadServiceURL()
-  }, [])
+  }, [i18n.language])
 
   const loadServiceURL = async () => {
     try {
@@ -579,7 +571,7 @@ export default function FederatedServices() {
                       )}
                     </h3>
                     <span className={`text-xs px-2 py-0.5 rounded ${categoryColors[svc.category] || 'bg-gray-100 text-gray-600'}`}>
-                      {categoryLabels[svc.category] || svc.category}
+                      {t('cat_' + svc.category, svc.category)}
                     </span>
                   </div>
                 </div>
@@ -900,7 +892,7 @@ export default function FederatedServices() {
                 <div>
                   <h2 className="text-xl font-bold">{selectedService.name}</h2>
                   <span className={`text-xs px-2 py-0.5 rounded ${categoryColors[selectedService.category] || 'bg-gray-100 text-gray-600'}`}>
-                    {categoryLabels[selectedService.category] || selectedService.category}
+                    {t('cat_' + selectedService.category, selectedService.category)}
                   </span>
                 </div>
               </div>
@@ -1325,9 +1317,9 @@ function VoIPPanel() {
           </div>
         )}
         <div className="flex gap-2 mt-2">
-          <input className="input text-sm" placeholder="Extension (ej: 2001)" value={newExt.extension} onChange={(e) => setNewExt({ ...newExt, extension: e.target.value })} />
-          <input className="input text-sm" placeholder="Nombre" value={newExt.display_name} onChange={(e) => setNewExt({ ...newExt, display_name: e.target.value })} />
-          <input className="input text-sm" placeholder="Password (auto)" value={newExt.password} onChange={(e) => setNewExt({ ...newExt, password: e.target.value })} />
+          <input className="input text-sm" placeholder={t('sip_ext_ph', 'Extension (e.g.: 2001)')} value={newExt.extension} onChange={(e) => setNewExt({ ...newExt, extension: e.target.value })} />
+          <input className="input text-sm" placeholder={t('sip_name_ph', 'Name')} value={newExt.display_name} onChange={(e) => setNewExt({ ...newExt, display_name: e.target.value })} />
+          <input className="input text-sm" placeholder={t('sip_pass_ph', 'Password (auto)')} value={newExt.password} onChange={(e) => setNewExt({ ...newExt, password: e.target.value })} />
           <button onClick={createExt} className="px-3 py-2 bg-trueque-600 text-white rounded-lg text-sm whitespace-nowrap">{t('add', 'Agregar')}</button>
         </div>
       </div>
@@ -1353,9 +1345,9 @@ function VoIPPanel() {
           </div>
         )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-          <input className="input text-sm" type="number" placeholder="Codigo (ej: 105)" value={newRoute.remote_village_code || ''} onChange={(e) => setNewRoute({ ...newRoute, remote_village_code: parseInt(e.target.value) || 0 })} />
-          <input className="input text-sm" placeholder="Nombre aldea" value={newRoute.remote_village_name} onChange={(e) => setNewRoute({ ...newRoute, remote_village_name: e.target.value })} />
-          <input className="input text-sm" placeholder="Endpoint SIP" value={newRoute.remote_endpoint} onChange={(e) => setNewRoute({ ...newRoute, remote_endpoint: e.target.value })} />
+          <input className="input text-sm" type="number" placeholder={t('sip_code_ph', 'Code (e.g.: 105)')} value={newRoute.remote_village_code || ''} onChange={(e) => setNewRoute({ ...newRoute, remote_village_code: parseInt(e.target.value) || 0 })} />
+          <input className="input text-sm" placeholder={t('sip_village_ph', 'Village name')} value={newRoute.remote_village_name} onChange={(e) => setNewRoute({ ...newRoute, remote_village_name: e.target.value })} />
+          <input className="input text-sm" placeholder={t('sip_endpoint_ph', 'SIP Endpoint')} value={newRoute.remote_endpoint} onChange={(e) => setNewRoute({ ...newRoute, remote_endpoint: e.target.value })} />
           <button onClick={createRoute} className="px-3 py-2 bg-trueque-600 text-white rounded-lg text-sm">{t('add_route', 'Agregar ruta')}</button>
         </div>
         <button onClick={autoConfigureRoutes} className="mt-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-1">

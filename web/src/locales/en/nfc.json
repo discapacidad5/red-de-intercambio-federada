@@ -169,9 +169,9 @@
   "drag_file": "Drag a .nfcpkg file here",
   "or_click": "or click to select",
   "install_driver_btn": "Install Driver",
-  "trust_self": "Self",
-  "trust_federated": "Federated",
-  "trust_manual": "Manual",
+  "trust_self": "Self — this node's key",
+  "trust_federated": "Federated — from a federated node",
+  "trust_manual": "Manual — added by admin",
   "trust_unknown": "Unknown",
   "label_and_key_required": "Label and public key are required",
   "step2_config": "Step 2: Configure Terminal",
@@ -424,5 +424,8 @@
   "desc_community": "Dual-card ESP32 terminal for community markets. Reads both the seller's card and the buyer's card in a single transaction. Designed for community barter where both members must be present.",
   "desc_android_pos": "Android app (phone or tablet) that works as a point of sale. It pairs with the node via a 6-digit short code. No dedicated hardware needed — uses the seller's phone. Generates charges via QR and NFC. Ideal for sellers who already have an Android phone.",
   "desc_ble_reader": "Bluetooth NFC reader (accessory). Not a terminal — it associates with the web or Android POS from the POS app. Not registered here.",
-  "desc_default": "Terminal hardware type."
+  "desc_default": "Terminal hardware type.",
+  "key_label_placeholder": "E.g.: Programmer X",
+  "terminal_label_ph": "E.g.: Don Jose Hardware Store",
+  "terminal_location_ph": "E.g.: Stall 5, Central Market"
 }

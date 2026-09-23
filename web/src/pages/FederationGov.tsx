@@ -33,7 +33,7 @@ interface FederationConstant {
 }
 
 export default function FederationGov() {
-  const { t } = useTranslation(['federation', 'common'])
+  const { t, i18n } = useTranslation(['federation', 'common'])
   const { currency } = useConfig()
   const [constants, setConstants] = useState<FederationConstant[]>([])
   const [showHelp, setShowHelp] = useState(false)
@@ -57,7 +57,7 @@ export default function FederationGov() {
     reason: '',
   })
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { loadAll() }, [i18n.language])
 
   const loadAll = async () => {
     setLoading(true)
@@ -408,7 +408,7 @@ export default function FederationGov() {
               <textarea
                 className="input"
                 rows={3}
-                placeholder="Ej: Aumentar la canasta basica de 500 a 600 TQ debido al aumento del costo de los alimentos basicos."
+                placeholder={t('proposal_desc_ph', 'E.g.: Increase the basic basket from 500 to 600 TQ due to increased basic food costs.')}
                 value={newProposal.description}
                 onChange={(e) => setNewProposal({ ...newProposal, description: e.target.value })}
               />
@@ -527,7 +527,7 @@ export default function FederationGov() {
               <input
                 type="text"
                 className="input"
-                placeholder="Ej: aldea-problematica.com"
+                placeholder={t('problem_node_ph', 'E.g.: problematic-village.com')}
                 value={expelForm.node_domain}
                 onChange={(e) => setExpelForm({ ...expelForm, node_domain: e.target.value })}
               />
@@ -541,7 +541,7 @@ export default function FederationGov() {
               <textarea
                 className="input"
                 rows={3}
-                placeholder="Ej: El nodo se niega sistemanticamente a votar propuestas, bloqueando cambios que benefician a toda la federacion."
+                placeholder={t('complaint_ph', 'E.g.: The node systematically refuses to vote on proposals, blocking changes that benefit the whole federation.')}
                 value={expelForm.reason}
                 onChange={(e) => setExpelForm({ ...expelForm, reason: e.target.value })}
               />

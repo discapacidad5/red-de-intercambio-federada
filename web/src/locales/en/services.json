@@ -14,6 +14,9 @@
   "cat_multimedia": "Multimedia",
   "cat_productividad": "Productivity",
   "cat_social": "Social Networks",
+  "cat_communication": "Communication",
+  "cat_productivity": "Productivity",
+  "cat_development": "Development & Others",
   "cdr_inbound": "inbound",
   "cdr_title": "Call log (CDR)",
   "check_update": "Check",
@@ -253,5 +256,11 @@
   "voip_title": "Village VoIP Telephony",
   "waiting_update": "Waiting for update to start...",
   "what_is": "What is it",
-  "what_replaces": "What it replaces"
+  "what_replaces": "What it replaces",
+  "sip_ext_ph": "Extension (e.g.: 2001)",
+  "sip_name_ph": "Name",
+  "sip_pass_ph": "Password (auto)",
+  "sip_code_ph": "Code (e.g.: 105)",
+  "sip_village_ph": "Village name",
+  "sip_endpoint_ph": "SIP Endpoint"
 }

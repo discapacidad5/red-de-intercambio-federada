@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -62,8 +63,12 @@ func (h *OrganizationCatalogHandler) listOrgRules(w http.ResponseWriter, r *http
 		if err := rows.Scan(&id, &category, &isProhibited, &requiresLabel, &reason, &isActive, &createdAt); err != nil {
 			continue
 		}
+		idStr := ""
+		if id != nil {
+			idStr = *id
+		}
 		r := map[string]interface{}{
-			"id":             id,
+			"id":             idStr,
 			"category_name":  category,
 			"is_prohibited":  isProhibited,
 			"requires_label": requiresLabel,
@@ -75,6 +80,9 @@ func (h *OrganizationCatalogHandler) listOrgRules(w http.ResponseWriter, r *http
 	if rules == nil {
 		rules = []map[string]interface{}{}
 	}
+	// Localizar category_name y reason (entity 'organization_catalog_rule')
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, nodeDomain)
+	localizeEntityMaps(r.Context(), h.Pool, rules, "organization_catalog_rule", lang, fallbackLang, "category_name", "reason")
 	writeJSON(w, 200, map[string]interface{}{"rules": rules})
 }
 
@@ -155,9 +163,22 @@ func (h *OrganizationCatalogHandler) getOrgProfile(w http.ResponseWriter, r *htt
 		})
 		return
 	}
+	// Localizar la descripcion del perfil (entity 'organization_profile')
+	desc := ""
+	if description != nil {
+		desc = *description
+	}
+	nodeDomain := r.Header.Get("X-Node-Domain")
+	if nodeDomain == "" {
+		nodeDomain = h.NodeDomain
+	}
+	lang, _ := resolveRequestLanguages(r, h.Pool, nodeDomain)
+	if v, _ := localizedContentValue(r.Context(), h.Pool, nodeDomain, "organization_profile", orgID, "description", desc, lang); v != "" {
+		desc = v
+	}
 	writeJSON(w, 200, map[string]interface{}{
 		"faith_profile": faithProfile,
-		"description":   description,
+		"description":   desc,
 		"is_active":     isActive,
 	})
 }
@@ -233,6 +254,25 @@ func (h *OrganizationCatalogHandler) listOrgProfiles(w http.ResponseWriter, r *h
 	}
 	if profiles == nil {
 		profiles = []map[string]interface{}{}
+	}
+	// Localizar descripciones de perfiles (entity 'organization_profile',
+	// entity_id = organization_id)
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, nodeDomain)
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(profiles))
+		for _, p := range profiles {
+			if oid, ok := p["organization_id"].(*string); ok && oid != nil {
+				keys = append(keys, "organization_profile:"+*oid+":description")
+			}
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, p := range profiles {
+			if oid, ok := p["organization_id"].(*string); ok && oid != nil {
+				if v := values["organization_profile:"+*oid+":description"]; v != "" {
+					p["description"] = v
+				}
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]interface{}{"profiles": profiles})
 }

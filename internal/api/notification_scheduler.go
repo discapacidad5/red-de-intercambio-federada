@@ -111,19 +111,29 @@ func (s *NotificationScheduler) notifyNonVoters(ctx context.Context, nodeDomain 
 	defer rows.Close()
 
 	timeLeft := time.Until(deadline)
-	timeLeftStr := fmt.Sprintf("%d horas", int(timeLeft.Hours()))
+	timeLeftCount := int(timeLeft.Hours())
+	timeLeftUnit := "hours"
 	if timeLeft.Hours() < 1 {
-		timeLeftStr = fmt.Sprintf("%d minutos", int(timeLeft.Minutes()))
+		timeLeftCount = int(timeLeft.Minutes())
+		timeLeftUnit = "minutes"
 	}
 
 	for rows.Next() {
 		var userID uuid.UUID
 		rows.Scan(&userID)
+		// Texto almacenado en el idioma preferido del destinatario
+		lang := userLanguage(ctx, s.Pool, userID, nodeDomain)
+		timeLeftStr := fmtTimeLeft(lang, deadline)
 		s.notify.Notify(ctx, nodeDomain, userID, "proposal_closing",
-			"Votacion por cerrar",
-			fmt.Sprintf("Quedan %s para votar: %s", timeLeftStr, description),
+			notifT(lang, "proposal_closing_title"),
+			fmt.Sprintf(notifT(lang, "proposal_closing_msg"), timeLeftStr, description),
 			"/app/assembly",
-			map[string]interface{}{"decision_id": decisionID, "time_left": timeLeftStr})
+			map[string]interface{}{
+				"decision_id": decisionID, "time_left": timeLeftStr,
+				"title_key":   "notif.proposal_closing_title",
+				"message_key": "notif.proposal_closing_msg",
+				"params":      map[string]interface{}{"time_left": timeLeftCount, "unit": timeLeftUnit, "description": description},
+			})
 	}
 
 	// Marcar como notificado
@@ -158,7 +168,12 @@ func (s *NotificationScheduler) checkUpcomingAssemblies(ctx context.Context) {
 			"Asamblea proxima",
 			fmt.Sprintf("La asamblea \"%s\" es manana a las %s.", title, startTime.Format("02/01/2006 15:04")),
 			"/app/assembly",
-			map[string]interface{}{"session_id": sessionID, "start_time": startTime.Format(time.RFC3339)})
+			map[string]interface{}{
+				"session_id": sessionID, "start_time": startTime.Format(time.RFC3339),
+				"title_key":   "notif.assembly_reminder_title",
+				"message_key": "notif.assembly_reminder_msg",
+				"params":      map[string]interface{}{"title": title, "time": startTime.Format("02/01/2006 15:04")},
+			})
 
 		// Marcar recordatorio enviado
 		s.Pool.Exec(ctx, `
@@ -199,6 +214,9 @@ func (s *NotificationScheduler) sendDailyDigest(ctx context.Context) {
 		var unreadCount int
 		rows.Scan(&userID, &email, &nodeDomain, &unreadCount)
 
+		// Idioma del destinatario (preferencia guardada) o default del nodo
+		lang := userLanguage(ctx, s.Pool, userID, nodeDomain)
+
 		// Obtener las ultimas 10 notificaciones no leidas para el resumen
 		notifs, _ := s.Pool.Query(ctx, `
 			SELECT title, message, notification_type, created_at
@@ -222,18 +240,9 @@ func (s *NotificationScheduler) sendDailyDigest(ctx context.Context) {
 			continue
 		}
 
-		// Construir el email
-		subject := fmt.Sprintf("Resumen diario: %d notificaciones no leidas", unreadCount)
-		body := fmt.Sprintf(`Hola,
-
-Tienes %d notificaciones no leidas en la Red Federada:
-
-%s
-
-Para ver todas tus notificaciones, ingresa a la aplicacion.
-
-Saludos,
-Red Federada`, unreadCount, strings.Join(items, "\n"))
+		// Construir el email en el idioma del destinatario
+		subject := fmt.Sprintf(notifT(lang, "digest_subject"), unreadCount)
+		body := fmt.Sprintf(notifT(lang, "digest_body"), unreadCount, strings.Join(items, "\n"))
 
 		// Enviar via el gateway de email
 		gw := NewGatewayService(s.Pool)

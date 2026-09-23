@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Sparkles,
   Plus,
@@ -373,6 +374,7 @@ export function LivePageEditor({
   onExit,
   onSaved,
 }: LivePageEditorProps) {
+  const { t } = useTranslation(['website', 'common'])
   const [blocks, setBlocks] = useState<SiteBlock[]>(initialBlocks)
   const [activeInspectorIndex, setActiveInspectorIndex] = useState<number | null>(null)
   const [insertModalIndex, setInsertModalIndex] = useState<number | null>(null)
@@ -787,14 +789,14 @@ export function LivePageEditor({
                     if (fromLangs.length === 1) {
                       copyFromLang(fromLangs[0].code)
                     } else {
-                      const choice = prompt(`Copiar desde: ${fromLangs.map(l => l.code.toUpperCase()).join(', ')}`)
+                      const choice = prompt(`${t('editor_copy_from', 'Copy from:')} ${fromLangs.map(l => l.code.toUpperCase()).join(', ')}`)
                       if (choice) copyFromLang(choice.toLowerCase())
                     }
                   }}
                   className="px-2 py-1 rounded text-[11px] font-bold bg-white/10 hover:bg-white/20 text-white transition flex items-center gap-1 ml-1"
-                  title="Copiar contenido de otro idioma"
+                  title={t('editor_copy_from_lang', 'Copy content from another language')}
                 >
-                  <Copy size={11} /> Copiar de...
+                  <Copy size={11} /> {t('editor_copy_from', 'Copy from...')}
                 </button>
               )}
             </div>
@@ -811,7 +813,7 @@ export function LivePageEditor({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white/15 hover:bg-white/25 text-white border border-white/20 transition shadow-xs"
           >
             <Plus size={14} />
-            <span className="hidden sm:inline">Añadir Módulo</span>
+            <span className="hidden sm:inline">{t('editor_add_module', 'Add Module')}</span>
           </button>
 
           <button
@@ -826,12 +828,12 @@ export function LivePageEditor({
             {saveSuccess ? (
               <>
                 <Check size={14} className="text-white" />
-                ¡Guardado!
+                {t('editor_saved', 'Saved!')}
               </>
             ) : (
               <>
                 <Save size={14} />
-                {saving ? 'Guardando...' : 'Guardar en Vivo'}
+                {saving ? t('editor_saving', 'Saving...') : t('editor_save_live', 'Save Live')}
               </>
             )}
           </button>
@@ -839,10 +841,10 @@ export function LivePageEditor({
           <button
             onClick={onExit}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition border border-white/15"
-            title="Salir del modo edición y ver la página limpia"
+            title={t('editor_exit_hint', 'Exit edit mode and view the clean page')}
           >
             <Eye size={14} />
-            <span className="hidden sm:inline">Salir</span>
+            <span className="hidden sm:inline">{t('editor_exit', 'Exit')}</span>
           </button>
         </div>
       </div>
@@ -864,10 +866,10 @@ export function LivePageEditor({
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 flex items-start gap-2">
             <Info size={16} className="flex-shrink-0 mt-0.5" />
             <div>
-              <strong>Nota sobre servicios:</strong> Los servicios listados aquí son informativos.
+              <strong>{t('editor_services_note_title', 'Note about services:')}</strong> {t('editor_services_note', 'The services listed here are informational.')}
               Para instalar, desinstalar o gestionar servicios reales, usa el{' '}
-              <a href="/app/services" className="font-bold underline">Panel de Servicios</a>.
-              Eliminar un servicio de esta página solo lo oculta del sitio público, no lo desinstala.
+              <a href="/app/services" className="font-bold underline">{t('editor_services_panel', 'Services Panel')}</a>.
+              {t('editor_services_note2', 'Removing a service from this page only hides it from the public site, it does not uninstall it.')}
             </div>
           </div>
         )}
@@ -875,8 +877,8 @@ export function LivePageEditor({
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 flex items-start gap-2">
             <Info size={16} className="flex-shrink-0 mt-0.5" />
             <div>
-              <strong>Normas de la Asamblea:</strong> El título y subtítulo de esta página son editables directamente.
-              Las normas requieren aprobación de la Asamblea General — clic en una norma para proponer una modificación.
+              <strong>{t('editor_assembly_note_title', 'Assembly Rules:')}</strong> {t('editor_assembly_note', 'The title and subtitle of this page are directly editable.')}
+              {t('editor_assembly_note2', 'Rules require General Assembly approval — click a rule to propose a modification.')}
             </div>
           </div>
         )}
@@ -914,7 +916,7 @@ export function LivePageEditor({
                     onClick={() => moveBlock(index, 'up')}
                     disabled={index === 0}
                     className="p-1 text-gray-300 hover:text-white disabled:opacity-20"
-                    title="Mover arriba"
+                    title={t('editor_move_up', 'Move up')}
                   >
                     <ArrowUp size={14} />
                   </button>
@@ -923,7 +925,7 @@ export function LivePageEditor({
                     onClick={() => moveBlock(index, 'down')}
                     disabled={index === blocks.length - 1}
                     className="p-1 text-gray-300 hover:text-white disabled:opacity-20"
-                    title="Mover abajo"
+                    title={t('editor_move_down', 'Move down')}
                   >
                     <ArrowDown size={14} />
                   </button>
@@ -931,7 +933,7 @@ export function LivePageEditor({
                   <button
                     onClick={() => duplicateBlock(index)}
                     className="p-1 text-gray-300 hover:text-blue-400"
-                    title="Duplicar módulo"
+                    title={t('editor_duplicate', 'Duplicate module')}
                   >
                     <Copy size={14} />
                   </button>
@@ -939,7 +941,7 @@ export function LivePageEditor({
                   <button
                     onClick={() => deleteBlock(index)}
                     className="p-1 text-gray-300 hover:text-red-400"
-                    title="Eliminar módulo"
+                    title={t('editor_delete_module', 'Delete module')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1001,14 +1003,14 @@ export function LivePageEditor({
         {blocks.length === 0 && (
           <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-gray-300 space-y-3">
             <Layers size={40} className="mx-auto text-gray-400" />
-            <h3 className="text-lg font-bold text-gray-700">Esta página está vacía</h3>
-            <p className="text-xs text-gray-500">Comienza insertando un encabezado o un carrusel de fotos.</p>
+            <h3 className="text-lg font-bold text-gray-700">{t('editor_empty_page', 'This page is empty')}</h3>
+            <p className="text-xs text-gray-500">{t('editor_empty_hint', 'Start by inserting a header or a photo carousel.')}</p>
             <button
               onClick={() => setInsertModalIndex(0)}
               className="btn-primary text-xs inline-flex items-center gap-1.5"
             >
               <Plus size={14} />
-              Añadir Primer Módulo
+              {t('editor_add_first', 'Add First Module')}
             </button>
           </div>
         )}
@@ -1022,9 +1024,9 @@ export function LivePageEditor({
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Plus size={20} className="text-emerald-800" />
-                  Insertar Módulo en la Posición #{insertModalIndex + 1}
+                  {t('editor_insert_at', 'Insert Module at Position')}#{insertModalIndex + 1}
                 </h3>
-                <p className="text-xs text-gray-500">Selecciona el tipo de bloque visual que deseas añadir.</p>
+                <p className="text-xs text-gray-500">{t('editor_select_block', 'Select the type of visual block you want to add.')}</p>
               </div>
               <button
                 onClick={() => setInsertModalIndex(null)}
@@ -1072,6 +1074,7 @@ function LiveBlockCustomizer({
   block: SiteBlock
   onChange: (updated: SiteBlock) => void
 }) {
+  const { t } = useTranslation(['website', 'common'])
   const update = (field: string, val: any) => {
     onChange({ ...block, [field]: val } as SiteBlock)
   }
@@ -1080,7 +1083,7 @@ function LiveBlockCustomizer({
     <div className="space-y-3.5">
       {'title' in block && (
         <div>
-          <label className="label text-xs font-bold">Título</label>
+          <label className="label text-xs font-bold">{t('editor_title', 'Title')}</label>
           <input
             className="input text-xs"
             value={block.title || ''}
@@ -1091,7 +1094,7 @@ function LiveBlockCustomizer({
 
       {'subtitle' in block && (
         <div>
-          <label className="label text-xs font-bold">Subtítulo</label>
+          <label className="label text-xs font-bold">{t('editor_subtitle', 'Subtitle')}</label>
           <input
             className="input text-xs"
             value={block.subtitle || ''}
@@ -1102,7 +1105,7 @@ function LiveBlockCustomizer({
 
       {'badge' in block && (
         <div>
-          <label className="label text-xs font-bold">Insignia / Badge</label>
+          <label className="label text-xs font-bold">{t('editor_badge', 'Badge')}</label>
           <input
             className="input text-xs"
             value={block.badge || ''}
@@ -1121,7 +1124,7 @@ function LiveBlockCustomizer({
           />
           {/* Preset Photos */}
           <div className="flex flex-wrap gap-1.5 mt-2">
-            <span className="text-[10px] text-gray-500 font-bold block w-full">Fotos de muestra:</span>
+            <span className="text-[10px] text-gray-500 font-bold block w-full">{t('editor_sample_photos', 'Sample photos:')}</span>
             {[
               { label: 'Hortalizas', url: '/placeholder.svg' },
               { label: 'Siembra', url: '/placeholder.svg' },
@@ -1143,7 +1146,7 @@ function LiveBlockCustomizer({
 
       {'description' in block && (
         <div>
-          <label className="label text-xs font-bold">Descripción</label>
+          <label className="label text-xs font-bold">{t('editor_description', 'Description')}</label>
           <textarea
             rows={3}
             className="input text-xs"
@@ -1156,11 +1159,11 @@ function LiveBlockCustomizer({
       {/* Hero Buttons */}
       {block.type === 'hero' && (
         <div className="space-y-2 pt-2 border-t border-gray-100">
-          <label className="label text-xs font-bold">Botón Principal</label>
+          <label className="label text-xs font-bold">{t('editor_primary_btn', 'Primary Button')}</label>
           <div className="grid grid-cols-2 gap-2">
             <input
               className="input text-xs"
-              placeholder="Texto"
+              placeholder={t('editor_text', 'Text')}
               value={block.primary_cta?.text || ''}
               onChange={(e) =>
                 update('primary_cta', { ...block.primary_cta, text: e.target.value, link: block.primary_cta?.link || '/p/productos' })
@@ -1168,7 +1171,7 @@ function LiveBlockCustomizer({
             />
             <input
               className="input text-xs"
-              placeholder="Enlace (/p/...)"
+              placeholder={t('editor_link', 'Link (/p/...)')}
               value={block.primary_cta?.link || ''}
               onChange={(e) =>
                 update('primary_cta', { ...block.primary_cta, link: e.target.value, text: block.primary_cta?.text || 'Ver Más' })
@@ -1218,7 +1221,7 @@ function LiveBlockCustomizer({
                 </div>
                 <input
                   className="input text-[11px]"
-                  placeholder="URL Imagen"
+                  placeholder={t('editor_img_url', 'Image URL')}
                   value={it.image_url}
                   onChange={(e) => {
                     const newItems = [...block.items]
@@ -1228,7 +1231,7 @@ function LiveBlockCustomizer({
                 />
                 <input
                   className="input text-[11px]"
-                  placeholder="Título"
+                  placeholder={t('editor_title', 'Title')}
                   value={it.title || ''}
                   onChange={(e) => {
                     const newItems = [...block.items]
@@ -1277,7 +1280,7 @@ function LiveBlockCustomizer({
                 </div>
                 <input
                   className="input text-[11px] font-bold"
-                  placeholder="Título"
+                  placeholder={t('editor_title', 'Title')}
                   value={it.title}
                   onChange={(e) => {
                     const newItems = [...block.items]
@@ -1288,7 +1291,7 @@ function LiveBlockCustomizer({
                 <textarea
                   rows={2}
                   className="input text-[11px]"
-                  placeholder="Descripción"
+                  placeholder={t('editor_description', 'Description')}
                   value={it.description}
                   onChange={(e) => {
                     const newItems = [...block.items]
@@ -1305,7 +1308,7 @@ function LiveBlockCustomizer({
       {/* RichText */}
       {block.type === 'richtext' && (
         <div>
-          <label className="label text-xs font-bold">Contenido</label>
+          <label className="label text-xs font-bold">{t('editor_content', 'Content')}</label>
           <textarea
             rows={6}
             className="input text-xs font-mono"

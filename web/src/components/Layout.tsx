@@ -2,7 +2,7 @@ import { NavLink, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { usePermissions } from '../hooks/usePermissions'
 import { api } from '../api'
-import { getNotifIcon, relativeTime } from '../lib/notifications'
+import { getNotifIcon, relativeTime, notifText } from '../lib/notifications'
 import { useTranslation } from 'react-i18next'
 import {
   Home, ArrowLeftRight, History, Package, Calculator, Store, Clock,
@@ -238,8 +238,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />}
                               <NotifIcon size={16} className={`${iconColor} mt-0.5 flex-shrink-0 ${n.is_read ? 'ml-2.5' : ''}`} />
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate">{n.title}</p>
-                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
+                                <p className="text-sm font-medium text-gray-800 truncate">{notifText(n, 'title')}</p>
+                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{notifText(n, 'message')}</p>
                                 <p className="text-xs text-gray-400 mt-1">{relativeTime(n.created_at)}</p>
                               </div>
                             </div>

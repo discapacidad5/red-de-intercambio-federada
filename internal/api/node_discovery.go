@@ -121,6 +121,12 @@ func (h *NodeDiscoveryHandler) getPublicNodeInfo(w http.ResponseWriter, r *http.
 		info["node_number"] = *nodeNumber
 	}
 
+	// Localizar la descripcion publica del nodo segun el idioma del request
+	lang, _ := resolveRequestLanguages(r, h.Pool, h.NodeDomain)
+	if v, _ := localizedContentValue(ctx, h.Pool, h.NodeDomain, "node_config", h.NodeDomain, "description", description, lang); v != "" {
+		info["description"] = v
+	}
+
 	writeJSON(w, 200, info)
 }
 
@@ -415,6 +421,20 @@ func (h *NodeDiscoveryHandler) listDiscoveredNodes(w http.ResponseWriter, r *htt
 			node["last_checked"] = lastChecked
 		}
 		nodes = append(nodes, node)
+	}
+	// Localizar descripciones de nodos conocidos (entity 'federation_known_node')
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, h.NodeDomain)
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			keys = append(keys, "federation_known_node:"+fmt.Sprint(n["node_domain"])+":description")
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, n := range nodes {
+			if v := values["federation_known_node:"+fmt.Sprint(n["node_domain"])+":description"]; v != "" {
+				n["description"] = v
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]interface{}{"discovered_nodes": nodes})
 }

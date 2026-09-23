@@ -746,7 +746,7 @@ export default function NotificationSettings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">{t('email', 'Email')}</label>
-              <input type="email" value={contacts.email} onChange={e => setContacts({ ...contacts, email: e.target.value })} className="input" placeholder="tu@email.org" />
+              <input type="email" value={contacts.email} onChange={e => setContacts({ ...contacts, email: e.target.value })} className="input" placeholder={t('email_ph', 'you@email.org')} />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">{t('phone_whatsapp', 'Telefono (WhatsApp)')}</label>
@@ -762,7 +762,7 @@ export default function NotificationSettings() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">{t('xmpp_jid', 'XMPP JID')}</label>
-              <input type="text" value={contacts.xmpp_jid} onChange={e => setContacts({ ...contacts, xmpp_jid: e.target.value })} className="input" placeholder="usuario@jabber.org" />
+              <input type="text" value={contacts.xmpp_jid} onChange={e => setContacts({ ...contacts, xmpp_jid: e.target.value })} className="input" placeholder={t('xmpp_ph', 'user@jabber.org')} />
             </div>
           </div>
 

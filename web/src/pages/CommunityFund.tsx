@@ -8,7 +8,7 @@ import { HelpCircle, Wallet, Users, Vote as VoteIcon, Plus, Check, X } from 'luc
 import { fmtTQ, toCents } from '../lib/format'
 
 export default function CommunityFund() {
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const { currency } = useConfig()
   const { hasPermission } = usePermissions()
   const [showHelp, setShowHelp] = useState(false)
@@ -34,7 +34,7 @@ export default function CommunityFund() {
     }).catch(() => {})
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [i18n.language])
 
   const createProposal = async () => {
     setError('')

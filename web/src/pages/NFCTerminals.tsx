@@ -649,12 +649,12 @@ export default function NFCTerminals() {
             </div>
             <div>
               <label className="label">{tt('terminal_label', 'Etiqueta del terminal')}</label>
-              <input className="input" placeholder="Ej: Ferreteria Don Jose" value={provisionLabel} onChange={(e) => setProvisionLabel(e.target.value)} />
+              <input className="input" placeholder={tt('terminal_label_ph', 'E.g.: Don Jose Hardware Store')} value={provisionLabel} onChange={(e) => setProvisionLabel(e.target.value)} />
               <p className="text-xs text-gray-400 mt-1">{tt('terminal_label_hint', 'Nombre descriptivo para identificar el terminal en la lista.')}</p>
             </div>
             <div>
               <label className="label">{tt('terminal_location', 'Ubicacion del terminal')}</label>
-              <input className="input" placeholder="Ej: Local 5, Mercado Central" value={provisionLocation} onChange={(e) => setProvisionLocation(e.target.value)} />
+              <input className="input" placeholder={tt('terminal_location_ph', 'E.g.: Stall 5, Central Market')} value={provisionLocation} onChange={(e) => setProvisionLocation(e.target.value)} />
               <p className="text-xs text-gray-400 mt-1">{tt('terminal_location_hint', 'Direccion o referencia del lugar donde se instala.')}</p>
             </div>
             <button

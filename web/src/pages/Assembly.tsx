@@ -1061,7 +1061,7 @@ function MemberSearchAndPerms({
 }
 
 export default function Assembly() {
-  const { t } = useTranslation(['assembly', 'common'])
+  const { t, i18n } = useTranslation(['assembly', 'common'])
   const { hasPermission, isSuperAdmin, superAdminEnabled } = usePermissions()
   const { currency } = useConfig()
   const canManageBoard = hasPermission('assembly.manage_board')
@@ -1229,7 +1229,7 @@ export default function Assembly() {
     }
   }, [sessionFilter, tab, meetingType])
 
-  useEffect(() => { load(); loadFreqConfig() }, [])
+  useEffect(() => { load(); loadFreqConfig() }, [i18n.language])
 
   const createProposal = async () => {
     setError('')

@@ -1483,14 +1483,14 @@ export default function NodeSettings() {
                   <div>
                     <label className="label">{t('settings_category')}</label>
                     <select className="input" value={newProfile.category} onChange={e => setNewProfile({ ...newProfile, category: e.target.value })}>
-                      <option value="custom">Custom</option>
-                      <option value="cristiana">Cristiana</option>
-                      <option value="hindu">Hindu</option>
-                      <option value="islamica">Islamica</option>
-                      <option value="judia">Judia</option>
-                      <option value="budista">Budista</option>
-                      <option value="rastafari">Rastafari</option>
-                      <option value="secular">Secular</option>
+                      <option value="custom">{t('faith_custom', 'Custom')}</option>
+                      <option value="cristiana">{t('faith_cristiana', 'Christian')}</option>
+                      <option value="hindu">{t('faith_hindu', 'Hindu')}</option>
+                      <option value="islamica">{t('faith_islamica', 'Islamic')}</option>
+                      <option value="judia">{t('faith_judia', 'Jewish')}</option>
+                      <option value="budista">{t('faith_budista', 'Buddhist')}</option>
+                      <option value="rastafari">{t('faith_rastafari', 'Rastafari')}</option>
+                      <option value="secular">{t('faith_secular', 'Secular')}</option>
                     </select>
                   </div>
                   <div>

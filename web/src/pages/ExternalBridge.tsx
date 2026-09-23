@@ -450,7 +450,7 @@ export default function ExternalBridge() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">{t('bank_label_name', 'Nombre descriptivo')}</label>
-                  <input className="input" placeholder="Ej: Banco Nacional USD" value={bankForm.account_name} onChange={(e) => setBankForm({ ...bankForm, account_name: e.target.value })} />
+                  <input className="input" placeholder={t('ph_bank_usd', 'E.g.: National Bank USD')} value={bankForm.account_name} onChange={(e) => setBankForm({ ...bankForm, account_name: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('bank_label_currency', 'Moneda')}</label>
@@ -460,7 +460,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('bank_label_bank', 'Banco (dejar vacio si es efectivo)')}</label>
-                  <input className="input" placeholder="Ej: Banco Nacional" value={bankForm.bank_name} onChange={(e) => setBankForm({ ...bankForm, bank_name: e.target.value })} disabled={bankForm.is_cash} />
+                  <input className="input" placeholder={t('ph_bank', 'E.g.: National Bank')} value={bankForm.bank_name} onChange={(e) => setBankForm({ ...bankForm, bank_name: e.target.value })} disabled={bankForm.is_cash} />
                 </div>
                 <div>
                   <label className="label">{t('bank_label_account_number', 'Numero de cuenta (dejar vacio si es efectivo)')}</label>
@@ -475,7 +475,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('bank_label_country', 'Pais del banco')}</label>
-                  <input className="input" placeholder="Ej: VE, CO, US" value={bankForm.country} onChange={(e) => setBankForm({ ...bankForm, country: e.target.value })} disabled={bankForm.is_cash} />
+                  <input className="input" placeholder={t('ph_country_codes', 'E.g.: VE, CO, US')} value={bankForm.country} onChange={(e) => setBankForm({ ...bankForm, country: e.target.value })} disabled={bankForm.is_cash} />
                 </div>
                 <div>
                   <label className="label">{t('bank_label_balance', 'Saldo inicial')}</label>
@@ -588,7 +588,7 @@ export default function ExternalBridge() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">{t('purchases_label_product', 'Producto')}</label>
-                  <input className="input" placeholder="Ej: Harina de trigo" value={purchaseForm.product_name} onChange={(e) => setPurchaseForm({ ...purchaseForm, product_name: e.target.value })} />
+                  <input className="input" placeholder={t('ph_product', 'E.g.: Wheat flour')} value={purchaseForm.product_name} onChange={(e) => setPurchaseForm({ ...purchaseForm, product_name: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('purchases_label_quantity', 'Cantidad')}</label>
@@ -596,7 +596,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('purchases_label_unit', 'Unidad')}</label>
-                  <input className="input" placeholder="kg, litros, unidades..." value={purchaseForm.unit} onChange={(e) => setPurchaseForm({ ...purchaseForm, unit: e.target.value })} />
+                  <input className="input" placeholder={t('ph_units', 'kg, liters, units...')} value={purchaseForm.unit} onChange={(e) => setPurchaseForm({ ...purchaseForm, unit: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('purchases_label_unit_cost', 'Precio unitario externo')}</label>
@@ -619,7 +619,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('purchases_label_supplier', 'Proveedor')}</label>
-                  <input className="input" placeholder="Ej: Distribuidora Andina" value={purchaseForm.supplier} onChange={(e) => setPurchaseForm({ ...purchaseForm, supplier: e.target.value })} />
+                  <input className="input" placeholder={t('ph_supplier', 'E.g.: Andean Distributor')} value={purchaseForm.supplier} onChange={(e) => setPurchaseForm({ ...purchaseForm, supplier: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('purchases_label_invoice', 'Numero de factura')}</label>
@@ -687,7 +687,7 @@ export default function ExternalBridge() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">{t('sales_label_product', 'Producto')}</label>
-                  <input className="input" placeholder="Ej: Cafe organico" value={saleForm.product_name} onChange={(e) => setSaleForm({ ...saleForm, product_name: e.target.value })} />
+                  <input className="input" placeholder={t('ph_product2', 'E.g.: Organic coffee')} value={saleForm.product_name} onChange={(e) => setSaleForm({ ...saleForm, product_name: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('sales_label_quantity', 'Cantidad')}</label>
@@ -695,7 +695,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('sales_label_unit', 'Unidad')}</label>
-                  <input className="input" placeholder="kg, litros..." value={saleForm.unit} onChange={(e) => setSaleForm({ ...saleForm, unit: e.target.value })} />
+                  <input className="input" placeholder={t('ph_units2', 'kg, liters...')} value={saleForm.unit} onChange={(e) => setSaleForm({ ...saleForm, unit: e.target.value })} />
                 </div>
                 <div>
                   <label className="label">{t('sales_label_unit_price', 'Precio unitario externo')}</label>
@@ -718,7 +718,7 @@ export default function ExternalBridge() {
                 </div>
                 <div>
                   <label className="label">{t('sales_label_buyer', 'Comprador')}</label>
-                  <input className="input" placeholder="Ej: Cooperativa de Exportacion" value={saleForm.buyer} onChange={(e) => setSaleForm({ ...saleForm, buyer: e.target.value })} />
+                  <input className="input" placeholder={t('ph_exporter', 'E.g.: Export Cooperative')} value={saleForm.buyer} onChange={(e) => setSaleForm({ ...saleForm, buyer: e.target.value })} />
                 </div>
               </div>
               <button onClick={createSale} className="btn-primary">{t('sales_register', 'Registrar Venta')}</button>

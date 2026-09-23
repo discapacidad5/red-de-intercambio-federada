@@ -55,7 +55,7 @@ interface Sponsorship {
 }
 
 export default function FederationPeers() {
-  const { t } = useTranslation(['federation', 'common'])
+  const { t, i18n } = useTranslation(['federation', 'common'])
   const { currency } = useConfig()
   const { hasPermission } = usePermissions()
   const [peers, setPeers] = useState<Peer[]>([])
@@ -90,7 +90,7 @@ export default function FederationPeers() {
     loadNodeLevels()
     loadSponsorships()
     loadBlocks()
-  }, [])
+  }, [i18n.language])
 
   const loadBalances = async () => {
     try {
@@ -668,12 +668,12 @@ export default function FederationPeers() {
             <h2 className="font-bold text-lg">{t('peers_register_modal_title', 'Registrar Nodo Peer')}</h2>
             <div>
               <label className="label">{t('peers_register_modal_domain', 'Dominio del nodo remoto')}</label>
-              <input className="input" placeholder="Ej: nodo-b.org" value={newPeer.peer_domain} onChange={(e) => setNewPeer({ ...newPeer, peer_domain: e.target.value })} />
+              <input className="input" placeholder={t('peer_domain_ph', 'E.g.: node-b.org')} value={newPeer.peer_domain} onChange={(e) => setNewPeer({ ...newPeer, peer_domain: e.target.value })} />
               <p className="text-xs text-gray-400 mt-1">{t('peers_domain_hint', 'Identificador unico del otro nodo en la red federada. Ejemplo:')} <code>nodo-b.org</code></p>
             </div>
             <div>
               <label className="label">{t('peers_register_modal_name', 'Nombre (opcional)')}</label>
-              <input className="input" placeholder="Ej: Banco Comunitario B" value={newPeer.peer_name} onChange={(e) => setNewPeer({ ...newPeer, peer_name: e.target.value })} />
+              <input className="input" placeholder={t('peer_name_ph', 'E.g.: Community Bank B')} value={newPeer.peer_name} onChange={(e) => setNewPeer({ ...newPeer, peer_name: e.target.value })} />
               <p className="text-xs text-gray-400 mt-1">{t('peers_name_hint', 'Nombre descriptivo del nodo para identificarlo facilmente. Ejemplo:')} <code>Banco Comunitario B</code></p>
             </div>
             <div>
@@ -688,7 +688,7 @@ export default function FederationPeers() {
             </div>
             <div>
               <label className="label">{t('peers_register_modal_notes', 'Notas (opcional)')}</label>
-              <input className="input" placeholder="Ej: Nodo de la comunidad vecina del norte" value={newPeer.notes} onChange={(e) => setNewPeer({ ...newPeer, notes: e.target.value })} />
+              <input className="input" placeholder={t('peer_notes_ph', 'E.g.: Node of the neighboring community to the north')} value={newPeer.notes} onChange={(e) => setNewPeer({ ...newPeer, notes: e.target.value })} />
               <p className="text-xs text-gray-400 mt-1">{t('peers_notes_hint', 'Notas internas para recordar quien es este nodo. Ejemplo:')} <code>Nodo de la comunidad vecina del norte</code></p>
             </div>
             <button onClick={addPeer} className="btn-primary w-full">{t('peers_register_btn', 'Registrar')}</button>

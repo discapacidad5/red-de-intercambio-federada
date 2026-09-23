@@ -28,6 +28,24 @@ export function getNotifIcon(type: string): { icon: LucideIcon; color: string } 
   return NOTIF_ICONS[type] || { icon: Bell, color: 'text-gray-500' }
 }
 
+// Renderiza el titulo/mensaje de una notificacion. Si el backend incluyo
+// claves de plantilla (metadata.title_key / message_key con params), se
+// renderiza con i18next para que aparezca en el idioma actual del usuario.
+// Si no, devuelve el texto almacenado (ya localizado por el backend).
+export function notifText(n: any, field: 'title' | 'message'): string {
+  const meta = n?.metadata
+  const key = meta?.[`${field}_key`]
+  if (key && meta?.params) {
+    const params = { ...meta.params }
+    if (typeof params.unit === 'string' && params.unit) {
+      params.unit = String(i18next.t(`notifications:notif.unit_${params.unit}`, { defaultValue: params.unit }))
+    }
+    const out = i18next.t(`notifications:${key}`, { ...params, defaultValue: n[field] || '' })
+    if (typeof out === 'string' && out && out !== key) return out
+  }
+  return n?.[field] || ''
+}
+
 // Formatea una fecha como tiempo relativo en espanol
 export function relativeTime(dateStr: string): string {
   const date = new Date(dateStr)

@@ -63,7 +63,7 @@ const HELP_SECTIONS = [
 ]
 
 export default function Organizations() {
-  const { t } = useTranslation(['organizations', 'common'])
+  const { t, i18n } = useTranslation(['organizations', 'common'])
   const navigate = useNavigate()
   const { currency } = useConfig()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -118,7 +118,7 @@ export default function Organizations() {
   useEffect(() => {
     loadOrgs()
     loadTypes()
-  }, [])
+  }, [i18n.language])
 
   const create = async () => {
     await api.post('/organizations', form)

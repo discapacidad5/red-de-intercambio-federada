@@ -143,7 +143,7 @@ export default function Calculator() {
     api.get(`/calculator/params?type=material&approved=true&lang=${i18n.language}`).then((d: any) => setMaterialParams(Array.isArray(d) ? d : [])).catch(() => setMaterialParams([]))
     // Cargar tarifa energetica para calculo dinamico
     api.get('/calculator/tariff').then((d: any) => setTariff(d)).catch(() => setTariff(null))
-  }, [])
+  }, [i18n.language])
 
   // Categorias dinamicas agrupadas desde workParams
   const workCategories = workParams.reduce((acc: any, p: any) => {

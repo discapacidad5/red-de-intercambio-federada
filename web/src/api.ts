@@ -126,8 +126,10 @@ export const api = {
   delete: <T>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
   upload: async <T>(path: string, formData: FormData): Promise<T> => {
     const token = getToken()
+    const lang = typeof window !== 'undefined' && (window as any).__i18n_lang__ ? (window as any).__i18n_lang__ : 'es'
     const headers: Record<string, string> = {
       'X-Node-Domain': getNodeDomain(),
+      'Accept-Language': lang,
     }
     if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${API_BASE}${path}`, {

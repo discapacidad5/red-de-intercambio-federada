@@ -75,7 +75,7 @@ export default function Governance() {
 
   useEffect(() => {
     loadRules()
-  }, [])
+  }, [i18n.language])
 
   const loadRules = async () => {
     try {

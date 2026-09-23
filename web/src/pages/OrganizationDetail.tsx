@@ -11,7 +11,7 @@ import { fmtTQ, toCents, fmtDateTime } from '../lib/format'
 export default function OrganizationDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { t } = useTranslation(['organizations', 'common'])
+  const { t, i18n } = useTranslation(['organizations', 'common'])
   const { currency } = useConfig()
   const { hasPermission } = usePermissions()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -118,7 +118,7 @@ export default function OrganizationDetail() {
 
   useEffect(() => {
     load()
-  }, [id])
+  }, [id, i18n.language])
 
   // Las organizaciones creadas por la Asamblea muestran su propio balance
   // (no el del Fondo Comunitario - el Fondo Comunitario se ve en la pagina de Asamblea)

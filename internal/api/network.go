@@ -598,6 +598,25 @@ func (nh *NetworkHandler) listServices(w http.ResponseWriter, r *http.Request) {
 	if services == nil {
 		services = []map[string]interface{}{}
 	}
+	// La entidad 'network_service' usa 'name' como entity_id (no hay columna id en el mapa)
+	lang, fallbackLang := resolveRequestLanguages(r, nh.Pool, nh.NodeDomain)
+	if !strings.EqualFold(lang, fallbackLang) {
+		var keys []string
+		for _, svc := range services {
+			name, _ := svc["name"].(string)
+			keys = append(keys, "network_service:"+name+":name", "network_service:"+name+":description")
+		}
+		vals := localizedContentValues(r.Context(), nh.Pool, keys, lang)
+		for _, svc := range services {
+			name, _ := svc["name"].(string)
+			if v := vals["network_service:"+name+":name"]; v != "" {
+				svc["name"] = v
+			}
+			if v := vals["network_service:"+name+":description"]; v != "" {
+				svc["description"] = v
+			}
+		}
+	}
 	writeJSON(w, 200, map[string]interface{}{"services": services})
 }
 

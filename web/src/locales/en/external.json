@@ -348,5 +348,14 @@
   "operations_product_help": "Select an existing product in the catalog. Search by name or description. E.g: Wheat flour, Solar energy.",
   "operations_product_ph": "E.g: Wheat flour, Solar energy...",
   "calc_external_formula": "external price = price",
-  "operations_no_products": "No products found"
+  "operations_no_products": "No products found",
+  "ph_bank_usd": "E.g.: National Bank USD",
+  "ph_bank": "E.g.: National Bank",
+  "ph_country_codes": "E.g.: VE, CO, US",
+  "ph_product": "E.g.: Wheat flour",
+  "ph_supplier": "E.g.: Andean Distributor",
+  "ph_product2": "E.g.: Organic coffee",
+  "ph_exporter": "E.g.: Export Cooperative",
+  "ph_units": "kg, liters, units...",
+  "ph_units2": "kg, liters..."
 }

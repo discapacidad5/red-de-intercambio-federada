@@ -6,7 +6,7 @@ import { Check, X, HelpCircle, UserPlus, Heart, Shield, Users } from 'lucide-rea
 import { toCents, fmtTQ } from '../lib/format'
 
 export default function Admission() {
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const { currency } = useConfig()
   const [pending, setPending] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -42,7 +42,7 @@ export default function Admission() {
     load()
     api.get('/countries').then((d: any) => setCountries(Array.isArray(d) ? d : [])).catch(() => {})
     api.get('/document-types').then((d: any) => setDocTypes(Array.isArray(d) ? d : [])).catch(() => {})
-  }, [])
+  }, [i18n.language])
 
   const defaultToSponsor = async (id: string) => {
     if (!confirm(t('admission.confirm_default', 'Confirmas que este usuario incumplio? Su deuda se transferira a su padrino.'))) return
@@ -236,13 +236,13 @@ export default function Admission() {
 
           <div>
             <label className="label">{t('admission.sponsored_username', 'Nombre de usuario del ahijado')}</label>
-            <input className="input" placeholder="Ej: maria" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <input className="input" placeholder={t('admission_ph_username', 'E.g.: maria')} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
             <p className="text-xs text-gray-400 mt-1">{t('admission.sponsored_username_hint', 'Nombre con el que el ahijado iniciara sesion. Sin espacios ni @.')}</p>
           </div>
 
           <div>
             <label className="label">{t('admission.display_name', 'Nombre para mostrar')}</label>
-            <input className="input" placeholder="Ej: Maria Gonzalez" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+            <input className="input" placeholder={t('admission_ph_name', 'E.g.: Maria Gonzalez')} value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
             <p className="text-xs text-gray-400 mt-1">{t('admission.display_name_hint', 'Nombre real del ahijado como lo veran los demas miembros.')}</p>
           </div>
 
@@ -271,7 +271,7 @@ export default function Admission() {
 
           <div>
             <label className="label">{t('admission.reason', 'Razon de la solicitud (opcional)')}</label>
-            <textarea className="input" rows={3} placeholder="Ej: Maria es productora de hortalizas y quiere unirse a la feria" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+            <textarea className="input" rows={3} placeholder={t('admission_ph_reason', 'E.g.: Maria grows vegetables and wants to join the market')} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
           </div>
 
           <div className="border-t pt-3">
@@ -305,7 +305,7 @@ export default function Admission() {
               </div>
               <div>
                 <label className="label">{t('admission.number', 'Numero')}</label>
-                <input className="input" placeholder="Ej: V-12345678" value={newDoc.document_number} onChange={(e) => setNewDoc({ ...newDoc, document_number: e.target.value })} />
+                <input className="input" placeholder={t('admission_ph_id', 'E.g.: V-12345678')} value={newDoc.document_number} onChange={(e) => setNewDoc({ ...newDoc, document_number: e.target.value })} />
               </div>
               <div>
                 <label className="label">{t('admission.issuer_country', 'Pais emisor')}</label>

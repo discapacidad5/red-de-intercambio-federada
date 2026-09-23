@@ -105,7 +105,7 @@ export default function Federation() {
 // PeersNetInfo muestra la info de red y servicios de los nodos federados.
 // Esta info se sincroniza automaticamente cuando un nodo cambia su config.
 function PeersNetInfo() {
-  const { t } = useTranslation(['federation', 'common'])
+  const { t, i18n } = useTranslation(['federation', 'common'])
   const [showHelp, setShowHelp] = useState(false)
   const [peers, setPeers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -126,7 +126,7 @@ function PeersNetInfo() {
 
   useEffect(() => {
     loadPeers()
-  }, [])
+  }, [i18n.language])
 
   const syncNow = async () => {
     setSyncing(true)

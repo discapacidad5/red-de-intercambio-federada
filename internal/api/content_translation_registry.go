@@ -289,10 +289,30 @@ func refreshContentTranslationSources(ctx context.Context, pool *pgxpool.Pool, l
 		`SELECT upsert_content_translation_source('__GLOBAL__', 'federation_constant', key, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', key)) FROM federation_constants`,
 		`SELECT upsert_content_translation_source(node_domain, 'assembly_config', id::text, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', proposal_type)) FROM assembly_config`,
 		`SELECT upsert_content_translation_source('__GLOBAL__', 'federation_node_info', node_domain, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', node_domain)) FROM federation_node_info`,
+		`SELECT upsert_content_translation_source('__GLOBAL__', 'country', iso2, 'name', $1, spanish_name, jsonb_build_object('label', spanish_name)) FROM countries WHERE is_active = true`,
+		`SELECT upsert_content_translation_source('__GLOBAL__', 'document_type', code, 'name', $1, spanish_name, jsonb_build_object('label', spanish_name)) FROM document_types`,
+		`SELECT upsert_content_translation_source('__GLOBAL__', 'federation_known_node', node_domain, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', node_domain)) FROM federation_known_nodes WHERE COALESCE(description, '') <> ''`,
+		`SELECT upsert_content_translation_source(node_domain, 'node_config', node_domain, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', node_name)) FROM node_config WHERE COALESCE(description, '') <> ''`,
+		`SELECT upsert_content_translation_source(source_node, 'product_federation_proposal', id::text, 'name', $1, name, jsonb_build_object('label', name)) FROM product_federation_proposals`,
+		`SELECT upsert_content_translation_source(source_node, 'product_federation_proposal', id::text, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', name)) FROM product_federation_proposals`,
+		`SELECT upsert_content_translation_source(node_domain, 'organization_catalog_rule', id::text, 'category_name', $1, COALESCE(category_name, ''), '{}'::jsonb) FROM organization_catalog_rules`,
+		`SELECT upsert_content_translation_source(node_domain, 'organization_catalog_rule', id::text, 'reason', $1, COALESCE(reason, ''), '{}'::jsonb) FROM organization_catalog_rules`,
+		`SELECT upsert_content_translation_source(node_domain, 'nfc_terminal', id::text, 'label', $1, COALESCE(label, ''), jsonb_build_object('label', COALESCE(label, terminal_id))) FROM nfc_terminals WHERE COALESCE(label, '') <> ''`,
+		`SELECT upsert_content_translation_source(node_domain, 'nfc_terminal', id::text, 'location', $1, COALESCE(location, ''), jsonb_build_object('label', COALESCE(label, terminal_id))) FROM nfc_terminals WHERE COALESCE(location, '') <> ''`,
+		`SELECT upsert_content_translation_source(node_domain, 'nfc_card', id::text, 'label', $1, COALESCE(label, ''), '{}'::jsonb) FROM nfc_cards WHERE COALESCE(label, '') <> ''`,
+		`SELECT upsert_content_translation_source(node_domain, 'biodynamic_config', node_domain, 'practice_notes', $1, COALESCE(practice_notes, ''), '{}'::jsonb) FROM biodynamic_config WHERE COALESCE(practice_notes, '') <> ''`,
+		`SELECT upsert_content_translation_source('__GLOBAL__', 'network_service', name, 'name', $1, name, jsonb_build_object('label', name)) FROM network_services`,
+		`SELECT upsert_content_translation_source('__GLOBAL__', 'network_service', name, 'description', $1, COALESCE(description, ''), jsonb_build_object('label', name)) FROM network_services WHERE COALESCE(description, '') <> ''`,
+		`SELECT upsert_content_translation_source(node_domain, 'department_account', id::text, 'name', $1, name, jsonb_build_object('label', name)) FROM department_accounts`,
 	}
 	for _, query := range queries {
 		_, _ = pool.Exec(ctx, query, lang)
 	}
+	// El catalogo de servicios federados vive en codigo Go (no en BD);
+	// sus fuentes se registran aqui para que aparezcan en el modulo de traducciones.
+	registerServiceCatalogSources(ctx, pool)
+	// Los presets de nodo (node_presets) tambien son contenido traducible.
+	registerNodePresetSources(ctx, pool)
 }
 
 func (h *SystemHandler) listContentTranslationSources(w http.ResponseWriter, r *http.Request) {

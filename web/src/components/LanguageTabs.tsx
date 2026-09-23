@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Globe, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export interface LanguageOption {
@@ -34,6 +35,7 @@ export const LanguageTabs: React.FC<LanguageTabsProps> = ({
   className = '',
   onCopyFrom,
 }) => {
+  const { t } = useTranslation('common')
   if (!languages || languages.length <= 1) return null
 
   return (
@@ -41,11 +43,11 @@ export const LanguageTabs: React.FC<LanguageTabsProps> = ({
       <div className="flex items-center justify-between">
         <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
           <Globe size={14} className="text-gray-500" />
-          <span>Idioma del contenido</span>
+          <span>{t('content_language', 'Content language')}</span>
         </label>
         {selectedLang !== defaultLang && (
           <span className="text-[11px] text-blue-600 font-medium">
-            Traducción opcional (fallback al principal si se deja vacía)
+            {t('optional_translation', 'Optional translation (falls back to the primary language if left empty)')}
           </span>
         )}
       </div>
@@ -72,7 +74,7 @@ export const LanguageTabs: React.FC<LanguageTabsProps> = ({
               <span>{l.code.toUpperCase()}</span>
               {isDefault ? (
                 <span className={`text-[10px] px-1 py-0.2 rounded font-normal ${isSelected ? 'bg-emerald-700 text-emerald-100' : 'bg-gray-100 text-gray-500'}`}>
-                  Principal
+                  {t('primary_lang', 'Primary')}
                 </span>
               ) : isTranslated ? (
                 <CheckCircle2 size={12} className={isSelected ? 'text-emerald-200' : 'text-emerald-600'} />
@@ -88,9 +90,9 @@ export const LanguageTabs: React.FC<LanguageTabsProps> = ({
             type="button"
             onClick={() => onCopyFrom(defaultLang)}
             className="ml-auto px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:text-gray-900 bg-white hover:bg-gray-50 rounded-lg border border-gray-200 transition"
-            title="Copiar texto del idioma principal como borrador"
+            title={t('copy_primary_draft', 'Copy primary language text as draft')}
           >
-            Copiar desde {defaultLang.toUpperCase()}
+            {t('copy_from', 'Copy from')} {defaultLang.toUpperCase()}
           </button>
         )}
       </div>

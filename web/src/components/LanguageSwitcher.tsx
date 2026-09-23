@@ -24,7 +24,7 @@ interface LanguageSwitcherProps {
 }
 
 export function LanguageSwitcher({ variant = 'light', compact = true, dropDirection, className = '' }: LanguageSwitcherProps) {
-  const { i18n } = useTranslation(['common'])
+  const { t, i18n } = useTranslation(['common'])
   const { isAuthenticated } = useAuth()
   const [languages, setLanguages] = useState<LanguageOption[]>([])
   const [open, setOpen] = useState(false)
@@ -173,7 +173,7 @@ export function LanguageSwitcher({ variant = 'light', compact = true, dropDirect
         <div
           ref={listRef}
           role="listbox"
-          aria-label="Select language"
+          aria-label={t('select_language', 'Select language')}
           className={`absolute right-0 ${dropdownPosition} ${bgColor} rounded-lg shadow-xl border ${borderColor} z-50 min-w-[140px] overflow-hidden`}
         >
           {languages.map((lang, index) => (

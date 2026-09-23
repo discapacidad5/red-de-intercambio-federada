@@ -76,6 +76,11 @@ func (s *NotifyService) Notify(ctx context.Context, nodeDomain string, userID uu
 		fmt.Printf("Error creando notificacion: %v\n", err)
 		return
 	}
+	// Registrar titulo/mensaje como fuentes traducibles para que aparezcan
+	// en el modulo de traducciones y puedan localizarse al leer.
+	meta := map[string]interface{}{"label": title, "type": notifType}
+	_, _ = upsertContentSource(ctx, s.Pool, resolvedDomain, "notification", notifID.String(), "title", title, meta)
+	_, _ = upsertContentSource(ctx, s.Pool, resolvedDomain, "notification", notifID.String(), "message", message, meta)
 	// Entregar en background por los canales configurados (email, telegram, matrix, etc.)
 	if s.gateway != nil {
 		s.gateway.DeliverInBackground(resolvedDomain, userID, notifID, notifType, title, message, link)

@@ -703,12 +703,12 @@ export default function NodeDiscovery() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">{t('discover_request_message', 'Mensaje (opcional)')}</label>
-              <textarea placeholder="Hola, somos la aldea X de [pais] y nos gustaria conocerlos..." value={requestData.message} onChange={e => setRequestData({ ...requestData, message: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" rows={3} />
+              <textarea placeholder={t('contact_msg_placeholder', 'Hi, we are village X from [country] and we would like to meet you...')} value={requestData.message} onChange={e => setRequestData({ ...requestData, message: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" rows={3} />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">{t('discover_request_contact_info', 'Informacion de contacto')}</label>
-              <input type="text" placeholder="ej: maria@mi-aldea.com o +1234567890" value={requestData.contact_info} onChange={e => setRequestData({ ...requestData, contact_info: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+              <input type="text" placeholder={t('contact_info_placeholder', 'e.g.: maria@my-village.com or +1234567890')} value={requestData.contact_info} onChange={e => setRequestData({ ...requestData, contact_info: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
               <p className="text-xs text-gray-500 mt-1">{t('discover_request_contact_hint', 'Como pueden contactarte del otro nodo')}</p>
             </div>
 
@@ -746,14 +746,14 @@ export default function NodeDiscovery() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">{t('discover_response_message', 'Mensaje de respuesta')}</label>
-              <textarea placeholder={respondData.status === 'interested' ? 'Gracias por contactarnos! Nos gustaria conocernos. Podemos coordinar una reunion...' : 'Gracias por su interes, pero por ahora no podemos federar...'} value={respondData.response_message} onChange={e => setRespondData({ ...respondData, response_message: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" rows={3} />
+              <textarea placeholder={respondData.status === 'interested' ? t('response_interested_ph', 'Thanks for contacting us! We would like to meet. We can coordinate a meeting...') : t('response_reject_ph', 'Thank you for your interest, but we cannot federate right now...')} value={respondData.response_message} onChange={e => setRespondData({ ...respondData, response_message: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" rows={3} />
             </div>
 
             {respondData.status === 'interested' && (
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('discover_request_contact_info', 'Informacion de contacto')}</label>
-                <input type="text" placeholder="ej: admin@mi-aldea.com o +1234567890" value={respondData.response_contact} onChange={e => setRespondData({ ...respondData, response_contact: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                <p className="text-xs text-gray-500 mt-1">Como pueden contactarte del otro nodo para coordinar la reunion</p>
+                <input type="text" placeholder={t('admin_contact_placeholder', 'e.g.: admin@my-village.com or +1234567890')} value={respondData.response_contact} onChange={e => setRespondData({ ...respondData, response_contact: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" />
+                <p className="text-xs text-gray-500 mt-1">{t('contact_meeting_hint', 'How the other node can contact you to coordinate the meeting')}</p>
               </div>
             )}
 

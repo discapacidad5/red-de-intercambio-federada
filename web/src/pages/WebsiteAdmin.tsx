@@ -1186,7 +1186,7 @@ export default function WebsiteAdmin() {
               <button
                 onClick={applyAllFeriaTemplates}
                 className="btn-secondary text-xs sm:text-sm flex items-center gap-1.5 border-amber-300 text-amber-900 hover:bg-amber-50"
-                title="Cargar todas las plantillas ricas prediseñadas"
+                title={t('load_templates_hint', 'Load all predesigned rich templates')}
               >
                 <RotateCcw size={15} className="text-amber-600" />
                 {t('load_template')}
@@ -1331,20 +1331,23 @@ export default function WebsiteAdmin() {
                   <div className="pt-4 mt-3 border-t border-gray-100 flex items-center justify-between">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
-                        onClick={() => openPageBuilder(p, 'es')}
+                        onClick={() => openPageBuilder(p, adminDefaultLang)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs"
                       >
                         <Edit size={14} />
                         {t('edit_modules')}
                       </button>
-                      <button
-                        onClick={() => openPageBuilder(p, 'en')}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition border border-gray-200"
-                        title="Editar / traducir en Inglés"
-                      >
-                        <Globe size={13} />
-                        EN
-                      </button>
+                      {adminLanguages.filter((l: any) => l.code !== adminDefaultLang).map((l: any) => (
+                        <button
+                          key={l.code}
+                          onClick={() => openPageBuilder(p, l.code)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition border border-gray-200"
+                          title={t('edit_translate_in', 'Edit / translate in')}
+                        >
+                          <Globe size={13} />
+                          {l.code.toUpperCase()}
+                        </button>
+                      ))}
                     </div>
 
                     <a
@@ -1389,7 +1392,7 @@ export default function WebsiteAdmin() {
               {/* Selector de idioma para edición */}
               <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200">
                 <Globe size={14} className="text-gray-500 ml-1" />
-                <span className="text-[11px] font-bold text-gray-500 hidden sm:inline mr-1">Idioma:</span>
+                <span className="text-[11px] font-bold text-gray-500 hidden sm:inline mr-1">{t('language_label', 'Language:')}</span>
                 {adminLanguages.map((l: any) => {
                   const isSelected = adminEditLang === l.code
                   const hasTrans = pageTranslations[l.code] || l.code === adminDefaultLang
@@ -1424,7 +1427,7 @@ export default function WebsiteAdmin() {
                   title={`Copiar contenido base desde ${adminDefaultLang.toUpperCase()}`}
                 >
                   <Copy size={14} />
-                  <span className="hidden lg:inline">Copiar desde {adminDefaultLang.toUpperCase()}</span>
+                  <span className="hidden lg:inline">{t('copy_from', 'Copy from')} {adminDefaultLang.toUpperCase()}</span>
                 </button>
               )}
 
@@ -1507,8 +1510,8 @@ export default function WebsiteAdmin() {
                     <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                       <Globe size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-bold">Editando versión en {adminEditLang.toUpperCase()}</p>
-                        <p className="text-[11px] text-amber-800 mt-0.5">Los cambios se guardarán como una traducción independiente sin afectar el idioma base ({adminDefaultLang.toUpperCase()}).</p>
+                        <p className="font-bold">{t('editing_version_in', 'Editing version in')} {adminEditLang.toUpperCase()}</p>
+                        <p className="text-[11px] text-amber-800 mt-0.5">{t('translation_saved_separately', 'Changes will be saved as an independent translation without affecting the base language')} ({adminDefaultLang.toUpperCase()}).</p>
                       </div>
                     </div>
                   )}
@@ -1874,7 +1877,7 @@ export default function WebsiteAdmin() {
                 className="input text-xs"
                 value={settingsForm.footer_about}
                 onChange={(e) => setSettingsForm({ ...settingsForm, footer_about: e.target.value })}
-                placeholder="Mercado a cielo abierto para todo el público..."
+                placeholder={t('footer_about_ph', 'Open-air market for everyone...')}
               />
             </div>
 
@@ -1884,7 +1887,7 @@ export default function WebsiteAdmin() {
                 className="input text-xs"
                 value={settingsForm.footer_schedule}
                 onChange={(e) => setSettingsForm({ ...settingsForm, footer_schedule: e.target.value })}
-                placeholder="Ej: Primer sábado de cada mes (9:00 AM a 1:00 PM)..."
+                placeholder={t('footer_schedule_ph', 'E.g.: First Saturday of each month (9:00 AM to 1:00 PM)...')}
               />
             </div>
 
@@ -1895,7 +1898,7 @@ export default function WebsiteAdmin() {
                   className="input text-xs"
                   value={settingsForm.social_instagram}
                   onChange={(e) => setSettingsForm({ ...settingsForm, social_instagram: e.target.value })}
-                  placeholder="tu_usuario"
+                  placeholder={t('instagram_ph', 'your_username')}
                 />
               </div>
               <div>
@@ -1904,7 +1907,7 @@ export default function WebsiteAdmin() {
                   className="input text-xs"
                   value={settingsForm.social_facebook}
                   onChange={(e) => setSettingsForm({ ...settingsForm, social_facebook: e.target.value })}
-                  placeholder="tu_pagina"
+                  placeholder={t('facebook_ph', 'your_page')}
                 />
               </div>
             </div>
@@ -1915,7 +1918,7 @@ export default function WebsiteAdmin() {
                 className="input text-xs"
                 value={settingsForm.contact_address}
                 onChange={(e) => setSettingsForm({ ...settingsForm, contact_address: e.target.value })}
-                placeholder="Dirección del lugar de encuentro..."
+                placeholder={t('address_ph', 'Meeting place address...')}
               />
             </div>
           </div>
@@ -2577,9 +2580,9 @@ function LinkPicker({ value, onChange, label }: { value: string; onChange: (v: s
             <option key={p.id} value={`/p/${p.slug}`}>{p.title} (/p/{p.slug})</option>
           ))}
           {/* Opciones especiales del sistema */}
-          <option value="/p/federacion">Federacion (/p/federacion)</option>
-          <option value="/p/gobernanza">Gobernanza (/p/gobernanza)</option>
-          <option value="/p/unirse">Unirse (/p/unirse)</option>
+          <option value="/p/federacion">{t('public:label_federacion', 'Federation')} (/p/federacion)</option>
+          <option value="/p/gobernanza">{t('public:label_gobernanza', 'Governance')} (/p/gobernanza)</option>
+          <option value="/p/unirse">{t('public:join', 'Join')} (/p/unirse)</option>
         </select>
       )}
 
@@ -2760,7 +2763,7 @@ function BlockCustomizer({ block, onChange }: { block: SiteBlock; onChange: (upd
                 </div>
                 <input
                   className="input text-xs"
-                  placeholder="URL Imagen"
+                  placeholder={t('editor_img_url', 'Image URL')}
                   value={it.image_url}
                   onChange={(e) => {
                     const newItems = [...block.items]
@@ -2771,7 +2774,7 @@ function BlockCustomizer({ block, onChange }: { block: SiteBlock; onChange: (upd
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     className="input text-xs"
-                    placeholder="Título"
+                    placeholder={t('editor_title', 'Title')}
                     value={it.title || ''}
                     onChange={(e) => {
                       const newItems = [...block.items]
@@ -2845,7 +2848,7 @@ function BlockCustomizer({ block, onChange }: { block: SiteBlock; onChange: (upd
                 </div>
                 <input
                   className="input text-xs"
-                  placeholder="Pregunta"
+                  placeholder={t('faq_question_ph', 'Question')}
                   value={it.question || ''}
                   onChange={(e) => {
                     const newItems = [...(block as any).items]
@@ -2856,7 +2859,7 @@ function BlockCustomizer({ block, onChange }: { block: SiteBlock; onChange: (upd
                 <textarea
                   rows={3}
                   className="input text-xs"
-                  placeholder="Respuesta"
+                  placeholder={t('faq_answer_ph', 'Answer')}
                   value={it.answer || ''}
                   onChange={(e) => {
                     const newItems = [...(block as any).items]

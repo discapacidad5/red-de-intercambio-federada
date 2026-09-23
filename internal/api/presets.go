@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,7 +33,40 @@ func (h *PresetsHandler) listPresets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "error listing presets")
 		return
 	}
+
+	// Localizar name/description del preset segun el idioma del request.
+	// Las fuentes (espanol) se registran como entity_type 'node_preset'.
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, "__GLOBAL__")
+	if !strings.EqualFold(lang, fallbackLang) && len(presets) > 0 {
+		keys := make([]string, 0, len(presets)*2)
+		for _, p := range presets {
+			keys = append(keys, "node_preset:"+p.ID+":name", "node_preset:"+p.ID+":description")
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for i := range presets {
+			if v := values["node_preset:"+presets[i].ID+":name"]; v != "" {
+				presets[i].Name = v
+			}
+			if v := values["node_preset:"+presets[i].ID+":description"]; v != "" {
+				presets[i].Description = v
+			}
+		}
+	}
 	writeJSON(w, 200, map[string]interface{}{"presets": presets})
+}
+
+// registerNodePresetSources registra los presets como fuentes traducibles
+// (entity_type 'node_preset', dominio '__GLOBAL__') para el modulo de idiomas.
+func registerNodePresetSources(ctx context.Context, pool *pgxpool.Pool) {
+	presets, err := db.ListPresets(ctx, pool)
+	if err != nil {
+		return
+	}
+	for _, p := range presets {
+		meta := map[string]interface{}{"label": p.Name, "category": p.Category}
+		_, _ = upsertContentSource(ctx, pool, "__GLOBAL__", "node_preset", p.ID, "name", p.Name, meta)
+		_, _ = upsertContentSource(ctx, pool, "__GLOBAL__", "node_preset", p.ID, "description", p.Description, meta)
+	}
 }
 
 func (h *PresetsHandler) getPreset(w http.ResponseWriter, r *http.Request) {

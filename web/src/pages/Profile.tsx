@@ -55,7 +55,7 @@ function prepareCreationOptions(opts: any): PublicKeyCredentialCreationOptions {
 
 export default function Profile() {
   const { currency } = useConfig()
-  const { t } = useTranslation(['profile', 'common'])
+  const { t, i18n } = useTranslation(['profile', 'common'])
   const [showHelp, setShowHelp] = useState(false)
   const [me, setMe] = useState<any>(null)
   const [copiedUuid, setCopiedUuid] = useState(false)
@@ -145,7 +145,7 @@ export default function Profile() {
     api.get(`/nfc/cards?user_id=${userId}`).then((d: any) => setNfcCards(Array.isArray(d) ? d : [])).catch(() => {})
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [i18n.language])
 
   // Cargar documentos, paises y tipos de documento
   useEffect(() => {

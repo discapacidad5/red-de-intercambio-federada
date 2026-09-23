@@ -593,5 +593,18 @@
   "conflicts_help_resolve_label": "How to resolve:",
   "conflicts_help_resolve": "For each conflict, you can propose a resolution: keep balance A, keep balance B, or combine both. Add notes explaining your decision.",
   "conflicts_help_vote_label": "Voting:",
-  "conflicts_help_vote": "Proposed resolutions must be voted on by the assembly. You can vote approve or reject each proposal."
+  "conflicts_help_vote": "Proposed resolutions must be voted on by the assembly. You can vote approve or reject each proposal.",
+  "contact_msg_placeholder": "Hi, we are village X from [country] and we would like to meet you...",
+  "contact_info_placeholder": "e.g.: maria@my-village.com or +1234567890",
+  "response_interested_ph": "Thanks for contacting us! We would like to meet. We can coordinate a meeting...",
+  "response_reject_ph": "Thank you for your interest, but we cannot federate right now...",
+  "admin_contact_placeholder": "e.g.: admin@my-village.com or +1234567890",
+  "contact_meeting_hint": "How the other node can contact you to coordinate the meeting",
+  "peer_domain_ph": "E.g.: node-b.org",
+  "peer_name_ph": "E.g.: Community Bank B",
+  "peer_notes_ph": "E.g.: Node of the neighboring community to the north",
+  "proposal_desc_ph": "E.g.: Increase the basic basket from 500 to 600 TQ due to increased basic food costs.",
+  "problem_node_ph": "E.g.: problematic-village.com",
+  "complaint_ph": "E.g.: The node systematically refuses to vote on proposals, blocking changes that benefit the whole federation.",
+  "limit_reason_ph": "E.g.: We increased trade with this node, we need a higher limit"
 }

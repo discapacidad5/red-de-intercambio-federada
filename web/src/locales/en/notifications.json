@@ -210,5 +210,16 @@
   "gateway_link_webhook_0": "Zapier (free webhooks)",
   "gateway_link_webhook_1": "Make (Integromat)",
   "gateway_link_webhook_2": "n8n (self-hosted)",
-  "gateway_link_webhook_3": "webhook.site (test)"
+  "gateway_link_webhook_3": "webhook.site (test)",
+  "see_more": "See more",
+  "email_ph": "you@email.org",
+  "xmpp_ph": "user@jabber.org",
+  "notif": {
+    "proposal_closing_title": "Voting closing soon",
+    "proposal_closing_msg": "{{time_left}} {{unit}} left to vote: {{description}}",
+    "assembly_reminder_title": "Upcoming assembly",
+    "assembly_reminder_msg": "The assembly \"{{title}}\" is tomorrow at {{time}}.",
+    "unit_hours": "hours",
+    "unit_minutes": "minutes"
+  }
 }

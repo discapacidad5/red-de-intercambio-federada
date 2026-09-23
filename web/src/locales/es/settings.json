@@ -818,5 +818,13 @@
   "faith_profile_vegano_name": "Vegano secular",
   "faith_profile_vegano_desc": "Veganismo secular. Sin carne, lacteos, huevos, miel.",
   "faith_profile_ital_name": "Ital Rastafari",
-  "faith_profile_ital_desc": "Ital Rastafari. Sin carne, sal, quimicos procesados."
+  "faith_profile_ital_desc": "Ital Rastafari. Sin carne, sal, quimicos procesados.",
+  "faith_custom": "Personalizado",
+  "faith_cristiana": "Cristiana",
+  "faith_hindu": "Hindu",
+  "faith_islamica": "Islamica",
+  "faith_judia": "Judia",
+  "faith_budista": "Budista",
+  "faith_rastafari": "Rastafari",
+  "faith_secular": "Secular"
 }

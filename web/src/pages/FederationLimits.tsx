@@ -251,7 +251,7 @@ export default function FederationLimits() {
 
             <div>
               <label className="label">{t('limits_reason', 'Razon del cambio')}</label>
-              <textarea className="input" rows={2} placeholder="Ej: Aumentamos el comercio con este nodo, necesitamos mas limite" value={changeForm.reason} onChange={(e) => setChangeForm({ ...changeForm, reason: e.target.value })} />
+              <textarea className="input" rows={2} placeholder={t('limit_reason_ph', 'E.g.: We increased trade with this node, we need a higher limit')} value={changeForm.reason} onChange={(e) => setChangeForm({ ...changeForm, reason: e.target.value })} />
             </div>
 
             <p className="text-xs text-gray-500">{t('limits_change_hint', 'Esta solicitud pasara a la asamblea para votacion. Los miembros decidiran si aprueban el cambio.')}</p>

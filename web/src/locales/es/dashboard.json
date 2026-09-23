@@ -99,5 +99,6 @@
   "status_scheduled": "Programada",
   "status_waiting_quorum": "Esperando quorum",
   "status_active": "Activa",
-  "status_closed": "Cerrada"
+  "status_closed": "Cerrada",
+  "fed_warning_bilateral": "Nodo {{node}} al {{pct}}% del limite bilateral ({{threshold}}%)"
 }

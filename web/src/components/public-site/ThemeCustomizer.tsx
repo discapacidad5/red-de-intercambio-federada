@@ -70,6 +70,7 @@ export interface PageMenuItem {
 
 interface ColorPreset {
   name: string
+  nameKey?: string // i18n key para presets integrados (custom usan nombre de usuario)
   primary_color: string
   secondary_color: string
   text_color: string
@@ -83,42 +84,42 @@ interface ColorPreset {
 
 const COLOR_PRESETS: ColorPreset[] = [
   {
-    name: 'Community Green',
+    name: 'Community Green', nameKey: 'preset_community_green',
     primary_color: '#162e16', secondary_color: '#c2410c',
     text_color: '#1a1a1a', button_hover_color: '#15803d',
     module_bg_color: '#ffffff', page_bg_color: '#f8faf5',
     footer_bg_color: '#112211', link_color: '#15803d', link_visited_color: '#6b21a8',
   },
   {
-    name: 'Barlovento Earth',
+    name: 'Barlovento Earth', nameKey: 'preset_barlovento_earth',
     primary_color: '#7c2d12', secondary_color: '#15803d',
     text_color: '#1a1a1a', button_hover_color: '#92400e',
     module_bg_color: '#fefce8', page_bg_color: '#fef9c3',
     footer_bg_color: '#451a03', link_color: '#92400e', link_visited_color: '#6b21a8',
   },
   {
-    name: 'Caribbean Blue',
+    name: 'Caribbean Blue', nameKey: 'preset_caribbean_blue',
     primary_color: '#0c4a6e', secondary_color: '#c2410c',
     text_color: '#1a1a1a', button_hover_color: '#0284c7',
     module_bg_color: '#ffffff', page_bg_color: '#f0f9ff',
     footer_bg_color: '#082f49', link_color: '#0284c7', link_visited_color: '#6b21a8',
   },
   {
-    name: 'Andean Sun',
+    name: 'Andean Sun', nameKey: 'preset_andean_sun',
     primary_color: '#92400e', secondary_color: '#166534',
     text_color: '#1a1a1a', button_hover_color: '#b45309',
     module_bg_color: '#fffbeb', page_bg_color: '#fef3c7',
     footer_bg_color: '#451a03', link_color: '#b45309', link_visited_color: '#6b21a8',
   },
   {
-    name: 'Rainforest',
+    name: 'Rainforest', nameKey: 'preset_rainforest',
     primary_color: '#14532d', secondary_color: '#a16207',
     text_color: '#1a1a1a', button_hover_color: '#166534',
     module_bg_color: '#f0fdf4', page_bg_color: '#ecfdf5',
     footer_bg_color: '#052e16', link_color: '#166534', link_visited_color: '#6b21a8',
   },
   {
-    name: 'Aurora',
+    name: 'Aurora', nameKey: 'preset_aurora',
     primary_color: '#581c87', secondary_color: '#0e7490',
     text_color: '#1a1a1a', button_hover_color: '#7e22ce',
     module_bg_color: '#faf5ff', page_bg_color: '#f3e8ff',
@@ -248,18 +249,11 @@ export function ThemeCustomizer({
     const formData = new FormData()
     formData.append('file', file)
     try {
-      const token = localStorage.getItem('fmc_token')
-      const res = await fetch('/api/uploads/image', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      })
-      if (!res.ok) throw new Error('Upload failed')
-      const data = await res.json()
+      const data = await api.upload<{ url: string }>('/uploads/image', formData)
       setDraft({ ...draft, logo_url: data.url })
       return data.url as string
     } catch {
-      alert('Could not upload logo')
+      alert(t('tc_logo_upload_failed', 'Could not upload logo'))
       return ''
     }
   }
@@ -349,7 +343,7 @@ export function ThemeCustomizer({
       await onSave(draft, draftPages)
       onClose()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error saving')
+      alert(err instanceof Error ? err.message : t('tc_error_saving', 'Error saving'))
     }
     setSaving(false)
   }
@@ -1015,7 +1009,7 @@ export function ThemeCustomizer({
               {/* Always show active palette indicator */}
               <div className="mb-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200">
                 <p className="text-[10px] text-emerald-800 font-bold">
-                  ✓ {t('tc_active')}: {activePreset ? activePreset.name : t('tc_custom_unsaved')}
+                  ✓ {t('tc_active')}: {activePreset ? (activePreset.nameKey ? t(activePreset.nameKey) : activePreset.name) : t('tc_custom_unsaved')}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -1043,7 +1037,7 @@ export function ThemeCustomizer({
                           <div className="w-4 h-4 rounded" style={{ backgroundColor: preset.link_color }} />
                           <div className="w-4 h-4 rounded" style={{ backgroundColor: preset.text_color }} />
                         </div>
-                        <p className="text-[10px] font-bold text-gray-700">{preset.name}</p>
+                        <p className="text-[10px] font-bold text-gray-700">{preset.nameKey ? t(preset.nameKey) : preset.name}</p>
                         {isActive && <p className="text-[9px] text-emerald-600 font-bold">✓ {t('tc_active')}</p>}
                       </button>
                       {isCustom && (

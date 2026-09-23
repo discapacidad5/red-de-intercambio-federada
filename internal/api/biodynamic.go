@@ -62,12 +62,12 @@ func (h *BiodynamicHandler) getCalendar(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		e := map[string]interface{}{
-			"id":           id,
-			"date":         calDate,
-			"day_type":     dayType,
+			"id":            id,
+			"date":          calDate,
+			"day_type":      dayType,
 			"constellation": constellation,
-			"is_node_day":  isNodeDay,
-			"notes":        notes,
+			"is_node_day":   isNodeDay,
+			"notes":         notes,
 		}
 		entries = append(entries, e)
 	}
@@ -84,11 +84,11 @@ func (h *BiodynamicHandler) upsertCalendarEntry(w http.ResponseWriter, r *http.R
 	}
 
 	var body struct {
-		Date         string `json:"calendar_date"`
-		DayType      string `json:"day_type"`
+		Date          string `json:"calendar_date"`
+		DayType       string `json:"day_type"`
 		Constellation string `json:"constellation"`
-		IsNodeDay    bool   `json:"is_node_day"`
-		Notes        string `json:"notes"`
+		IsNodeDay     bool   `json:"is_node_day"`
+		Notes         string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, 400, "invalid request body")
@@ -162,10 +162,17 @@ func (h *BiodynamicHandler) getConfig(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	notes := ""
+	if practiceNotes != nil {
+		notes = *practiceNotes
+	}
+	// Localizar notas de practicas segun el idioma del request
+	lang, _ := resolveRequestLanguages(r, h.Pool, nodeDomain)
+	localized, _ := localizedContentValue(r.Context(), h.Pool, nodeDomain, "biodynamic_config", nodeDomain, "practice_notes", notes, lang)
 	writeJSON(w, 200, map[string]interface{}{
 		"is_active":           isActive,
 		"show_in_public_page": showInPublic,
-		"practice_notes":      practiceNotes,
+		"practice_notes":      localized,
 	})
 }
 
@@ -194,6 +201,9 @@ func (h *BiodynamicHandler) updateConfig(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		writeError(w, 500, "error saving biodynamic config")
 		return
+	}
+	if body.PracticeNotes != "" {
+		_, _ = upsertContentSource(r.Context(), h.Pool, nodeDomain, "biodynamic_config", nodeDomain, "practice_notes", body.PracticeNotes, map[string]interface{}{"label": "practice_notes"})
 	}
 	writeJSON(w, 200, map[string]interface{}{"success": true})
 }

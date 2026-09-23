@@ -915,5 +915,18 @@
   "time_just_now": "hace un momento",
   "time_minutes_ago": "hace {{count}} minutos",
   "time_hours_ago": "hace {{count}} horas",
-  "time_days_ago": "hace {{count}} dias"
+  "time_days_ago": "hace {{count}} dias",
+  "content_language": "Idioma del contenido",
+  "optional_translation": "Traducción opcional (fallback al principal si se deja vacía)",
+  "primary_lang": "Principal",
+  "copy_primary_draft": "Copiar texto del idioma principal como borrador",
+  "copy_from": "Copiar desde",
+  "calculator.help_easy_mode": "Modo facil",
+  "calculator.help_advanced_mode": "Modo avanzado",
+  "calculator.help_example": "Ejemplo:",
+  "admission_ph_username": "Ej: maria",
+  "admission_ph_name": "Ej: Maria Gonzalez",
+  "admission_ph_reason": "Ej: Maria es productora de hortalizas y quiere unirse a la feria",
+  "admission_ph_id": "Ej: V-12345678",
+  "select_language": "Seleccionar idioma"
 }

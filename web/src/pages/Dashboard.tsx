@@ -8,7 +8,7 @@ import { fmtTQ } from '../lib/format'
 
 export default function Dashboard() {
   const { currency } = useConfig()
-  const { t } = useTranslation(['dashboard', 'common'])
+  const { t, i18n } = useTranslation(['dashboard', 'common'])
   const navigate = useNavigate()
   const [balance, setBalance] = useState<number | null>(null)
   const [creditLimit, setCreditLimit] = useState<number | null>(null)
@@ -45,7 +45,7 @@ export default function Dashboard() {
       setMyOrgs(Array.isArray(orgs) ? orgs : [])
       setMyDepts(Array.isArray(depts) ? depts : [])
     }).catch(() => setError(t('error_loading', 'Error al cargar datos')))
-  }, [])
+  }, [i18n.language])
 
   return (
     <div className="space-y-6">
@@ -181,7 +181,9 @@ export default function Dashboard() {
             {warnings.map((w, i) => (
               <div key={i} className="flex items-center gap-2 text-sm bg-orange-50 border border-orange-200 rounded-lg p-3">
                 <AlertTriangle size={16} className="text-orange-600" />
-                <span>{w.message}</span>
+                <span>{w.limit_type === 'bilateral'
+                  ? t('fed_warning_bilateral', { node: w.remote_node, pct: Number(w.usage_pct || 0).toFixed(1), threshold: w.threshold, defaultValue: w.message })
+                  : w.message}</span>
               </div>
             ))}
           </div>

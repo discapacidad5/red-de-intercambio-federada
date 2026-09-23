@@ -898,5 +898,18 @@
   "time_just_now": "just now",
   "time_minutes_ago": "{{count}} min ago",
   "time_hours_ago": "{{count}}h ago",
-  "time_days_ago": "{{count}}d ago"
+  "time_days_ago": "{{count}}d ago",
+  "content_language": "Content language",
+  "optional_translation": "Optional translation (falls back to the primary language if left empty)",
+  "primary_lang": "Primary",
+  "copy_primary_draft": "Copy primary language text as draft",
+  "copy_from": "Copy from",
+  "calculator.help_easy_mode": "Easy mode",
+  "calculator.help_advanced_mode": "Advanced mode",
+  "calculator.help_example": "Example:",
+  "admission_ph_username": "E.g.: maria",
+  "admission_ph_name": "E.g.: Maria Gonzalez",
+  "admission_ph_reason": "E.g.: Maria grows vegetables and wants to join the market",
+  "admission_ph_id": "E.g.: V-12345678",
+  "select_language": "Select language"
 }

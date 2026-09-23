@@ -1561,6 +1561,9 @@ func (h *NFCTerminalHandler) listOrgTerminals(w http.ResponseWriter, r *http.Req
 	if terminals == nil {
 		terminals = []map[string]interface{}{}
 	}
+	nodeDomain := db.ResolveNodeDomain(r.Context(), h.NFC.Pool, r.Header.Get("X-Node-Domain"), h.NodeDomain)
+	lang, fallbackLang := resolveRequestLanguages(r, h.NFC.Pool, nodeDomain)
+	localizeEntityMaps(r.Context(), h.NFC.Pool, terminals, "nfc_terminal", lang, fallbackLang, "label", "location")
 	writeJSON(w, 200, terminals)
 }
 
@@ -2958,6 +2961,24 @@ func (h *NFCTerminalHandler) listMyTerminals(w http.ResponseWriter, r *http.Requ
 	}
 	if terminals == nil {
 		terminals = []MyTerminal{}
+	}
+	// Localizar label/location segun el idioma del request
+	nodeDomain := db.ResolveNodeDomain(r.Context(), h.NFC.Pool, r.Header.Get("X-Node-Domain"), h.NodeDomain)
+	lang, fallbackLang := resolveRequestLanguages(r, h.NFC.Pool, nodeDomain)
+	if !strings.EqualFold(lang, fallbackLang) {
+		var keys []string
+		for _, t := range terminals {
+			keys = append(keys, "nfc_terminal:"+t.ID.String()+":label", "nfc_terminal:"+t.ID.String()+":location")
+		}
+		vals := localizedContentValues(r.Context(), h.NFC.Pool, keys, lang)
+		for i := range terminals {
+			if v := vals["nfc_terminal:"+terminals[i].ID.String()+":label"]; v != "" && terminals[i].Label != nil {
+				terminals[i].Label = &v
+			}
+			if v := vals["nfc_terminal:"+terminals[i].ID.String()+":location"]; v != "" && terminals[i].Location != nil {
+				terminals[i].Location = &v
+			}
+		}
 	}
 	writeJSON(w, 200, terminals)
 }

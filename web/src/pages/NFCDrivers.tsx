@@ -47,7 +47,7 @@ interface SigningKey {
 type Tab = 'installed' | 'available' | 'keys'
 
 export default function NFCDrivers() {
-  const { t } = useTranslation(['nfc', 'common'])
+  const { t, i18n } = useTranslation(['nfc', 'common'])
   const [tab, setTab] = useState<Tab>('installed')
   const [drivers, setDrivers] = useState<DriverInfo[]>([])
   const [available, setAvailable] = useState<AvailableDriver[]>([])
@@ -77,7 +77,7 @@ export default function NFCDrivers() {
     }
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() }, [i18n.language])
 
   const handleActivate = async (type: string) => {
     try { await api.post(`/nfc/drivers/${type}/activate`); setMsg(t('driver_activated', 'Driver activado')); loadData() }
@@ -195,7 +195,7 @@ export default function NFCDrivers() {
                       {d.manifest.security && <span>Seguridad: {d.manifest.security.algorithm}</span>}
                       {d.manifest.protocol && <span>Slots: {d.manifest.protocol.slots} ({d.manifest.protocol.active_slots} activos)</span>}
                       {d.manifest.compatibility && <span>Android: {d.manifest.compatibility.android}</span>}
-                      <span>Firmado por: {d.signed_by || 'N/A'}</span>
+                      <span>{t('signed_by', 'Signed by')}: {d.signed_by || 'N/A'}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
@@ -388,7 +388,7 @@ function SigningKeysTab({ keys, onRemove, onAdded, onError }: {
           <h3 className="font-semibold">{t('add_key_title', 'Agregar Clave Publica de Firma')}</h3>
           <div>
             <label className="block text-sm font-medium mb-1">{t('key_label', 'Label (nombre descriptivo)')}</label>
-            <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Ej: Programador X" className="w-full border rounded px-3 py-2" />
+            <input value={label} onChange={e => setLabel(e.target.value)} placeholder={t('key_label_placeholder', 'E.g.: Programmer X')} className="w-full border rounded px-3 py-2" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">{t('pub_key', 'Clave Publica (hex, 128 chars)')}</label>
@@ -397,9 +397,9 @@ function SigningKeysTab({ keys, onRemove, onAdded, onError }: {
           <div>
             <label className="block text-sm font-medium mb-1">{t('trust_level', 'Nivel de Confianza')}</label>
             <select value={trustLevel} onChange={e => setTrustLevel(e.target.value)} className="border rounded px-3 py-2">
-              <option value="manual">Manual — agregada por el admin</option>
-              <option value="federated">Federado — de un nodo federado</option>
-              <option value="self">Self — clave de este nodo</option>
+              <option value="manual">{t('trust_manual', 'Manual — added by admin')}</option>
+              <option value="federated">{t('trust_federated', 'Federated — from a federated node')}</option>
+              <option value="self">{t('trust_self', 'Self — this node\'s key')}</option>
             </select>
           </div>
           <div className="flex gap-2 justify-end">

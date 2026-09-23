@@ -1,4 +1,5 @@
 ﻿import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { Image as ImageIcon, X, Check, Plus, Trash2, Upload, Link2 } from 'lucide-react'
 import { api, getStorageKeys } from '../../api'
@@ -291,6 +292,7 @@ export function EdButton({
   icon,
   defaultLink = '/p/unirse',
 }: EdButtonProps) {
+  const { t } = useTranslation(['website', 'common'])
   const { editMode, updateField } = useInlineEdit()
   const ref = useRef<HTMLSpanElement>(null)
   const [showLinkEditor, setShowLinkEditor] = useState(false)
@@ -328,7 +330,7 @@ export function EdButton({
           }
         }}
         className={`${className} outline-none cursor-text hover:bg-yellow-100/40 focus:bg-yellow-100/60 focus:ring-2 focus:ring-amber-400 rounded-sm`}
-        title="Clic para editar texto del botón"
+        title={t('ed_click_edit_btn', 'Click to edit button text')}
       />
       {linkField && (
         <button
@@ -338,7 +340,7 @@ export function EdButton({
             setShowLinkEditor(!showLinkEditor)
           }}
           className="absolute -top-2 -right-2 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/btn:opacity-100 transition shadow-lg"
-          title="Editar enlace del botón"
+          title={t('ed_edit_btn_link', 'Edit button link')}
         >
           <Link2 size={11} />
         </button>
@@ -351,11 +353,11 @@ export function EdButton({
             onChange={(e) => setTempLink(e.target.value)}
             className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded outline-none focus:border-emerald-500"
           >
-            <option value="">-- Pagina interna --</option>
-            <option value="/p/productos">Productos</option>
-            <option value="/p/unirse">Unirse</option>
-            <option value="/p/federacion">Federacion</option>
-            <option value="/p/gobernanza">Gobernanza</option>
+            <option value="">{t('ed_internal_page', '-- Internal page --')}</option>
+            <option value="/p/productos">{t('public:label_productos', 'Products')}</option>
+            <option value="/p/unirse">{t('public:join', 'Join')}</option>
+            <option value="/p/federacion">{t('public:label_federacion', 'Federation')}</option>
+            <option value="/p/gobernanza">{t('public:label_gobernanza', 'Governance')}</option>
           </select>
           {/* Input para URL externa o ancla */}
           <div className="flex items-center gap-1.5">
@@ -382,7 +384,7 @@ export function EdButton({
               <X size={11} />
             </button>
           </div>
-          <p className="text-[9px] text-gray-400">Selecciona una pagina interna o escribe una URL externa o ancla (#seccion)</p>
+          <p className="text-[9px] text-gray-400">{t('ed_page_or_url_hint', 'Select an internal page or type an external URL or anchor (#section)')}</p>
         </div>
       )}
     </span>
@@ -425,6 +427,7 @@ export function EdRemoveItem({
   index: number
   className?: string
 }) {
+  const { t } = useTranslation(['website', 'common'])
   const { editMode, removeArrayItem } = useInlineEdit()
   if (!editMode) return null
   return (
@@ -434,7 +437,7 @@ export function EdRemoveItem({
         removeArrayItem(arrayField, index)
       }}
       className={`inline-flex items-center justify-center w-5 h-5 bg-red-500 text-white rounded-full hover:bg-red-600 transition shadow ${className}`}
-      title="Eliminar este item"
+      title={t('ed_remove_item', 'Remove this item')}
     >
       <Trash2 size={11} />
     </button>
@@ -476,6 +479,7 @@ function ImageEditorModal({
   onCancel: () => void
   compact?: boolean
 }) {
+  const { t } = useTranslation(['website', 'common'])
   const [tempUrl, setTempUrl] = useState(initialUrl)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
@@ -509,7 +513,7 @@ function ImageEditorModal({
         <button
           onClick={onCancel}
           className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center text-gray-600 flex-shrink-0"
-          title="Cerrar sin cambiar"
+          title={t('ed_close_no_change', 'Close without changing')}
         >
           <X size={14} />
         </button>
@@ -531,11 +535,11 @@ function ImageEditorModal({
           }}
         />
         {uploading ? (
-          <p className="text-xs text-emerald-700 font-bold">Subiendo...</p>
+          <p className="text-xs text-emerald-700 font-bold">{t('ed_uploading', 'Uploading...')}</p>
         ) : (
           <>
             <Upload size={20} className="mx-auto text-emerald-600 mb-1" />
-            <p className="text-[11px] text-gray-600 font-semibold">Subir imagen desde tu PC</p>
+            <p className="text-[11px] text-gray-600 font-semibold">{t('ed_upload_image', 'Upload image from your PC')}</p>
           </>
         )}
       </div>
@@ -547,7 +551,7 @@ function ImageEditorModal({
           type="text"
           value={tempUrl}
           onChange={(e) => setTempUrl(e.target.value)}
-          placeholder="O pega una URL..."
+          placeholder={t('ed_paste_url', 'Or paste a URL...')}
           className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded-lg outline-none focus:border-emerald-500"
         />
       </div>

@@ -727,6 +727,8 @@ func (fh *FederationHandler) listPendingProductProposals(w http.ResponseWriter, 
 			"created_at":        createdAt,
 		})
 	}
+	lang, fallbackLang := resolveRequestLanguages(r, fh.Pool, fh.NodeDomain)
+	localizeEntityMaps(r.Context(), fh.Pool, proposals, "product_federation_proposal", lang, fallbackLang, "name", "description")
 	writeJSON(w, 200, proposals)
 }
 
@@ -789,6 +791,8 @@ func (fh *FederationHandler) listAllProductProposals(w http.ResponseWriter, r *h
 			"reviewed_at":       ra,
 		})
 	}
+	lang, fallbackLang := resolveRequestLanguages(r, fh.Pool, fh.NodeDomain)
+	localizeEntityMaps(r.Context(), fh.Pool, proposals, "product_federation_proposal", lang, fallbackLang, "name", "description")
 	writeJSON(w, 200, proposals)
 }
 

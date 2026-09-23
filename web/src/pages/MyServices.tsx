@@ -6,7 +6,7 @@ import { Plug, CheckCircle, XCircle, Calendar, RefreshCw } from 'lucide-react'
 import { fmtTQ, fmtDate } from '../lib/format'
 
 export default function MyServices() {
-  const { t } = useTranslation(['services', 'common'])
+  const { t, i18n } = useTranslation(['services', 'common'])
   const { currency } = useConfig()
   const [assemblyServices, setAssemblyServices] = useState<any[]>([])
   const [voluntaryServices, setVoluntaryServices] = useState<any[]>([])
@@ -15,7 +15,7 @@ export default function MyServices() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [i18n.language])
 
   const loadData = () => {
     setLoading(true)

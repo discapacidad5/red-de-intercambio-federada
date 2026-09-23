@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -57,15 +58,32 @@ func (h *DepartmentalAccountingHandler) listAccounts(w http.ResponseWriter, r *h
 			continue
 		}
 		accounts = append(accounts, map[string]interface{}{
-			"id":            id,
-			"name":          name,
-			"account_type":  accountType,
-			"balance":       balance,
-			"credit_limit":  creditLimit,
-			"debit_limit":   debitLimit,
-			"is_active":     isActive,
-			"created_at":    createdAt,
+			"id":           id,
+			"name":         name,
+			"account_type": accountType,
+			"balance":      balance,
+			"credit_limit": creditLimit,
+			"debit_limit":  debitLimit,
+			"is_active":    isActive,
+			"created_at":   createdAt,
 		})
+	}
+	lang, fallbackLang := resolveRequestLanguages(r, h.Pool, h.NodeDomain)
+	if !strings.EqualFold(lang, fallbackLang) {
+		keys := make([]string, 0, len(accounts))
+		for _, a := range accounts {
+			if id, ok := a["id"].(*string); ok && id != nil {
+				keys = append(keys, "department_account:"+*id+":name")
+			}
+		}
+		values := localizedContentValues(r.Context(), h.Pool, keys, lang)
+		for _, a := range accounts {
+			if id, ok := a["id"].(*string); ok && id != nil {
+				if v := values["department_account:"+*id+":name"]; v != "" {
+					a["name"] = v
+				}
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]interface{}{"accounts": accounts})
 }
@@ -153,18 +171,18 @@ func (h *DepartmentalAccountingHandler) listTransactions(w http.ResponseWriter, 
 			continue
 		}
 		txs = append(txs, map[string]interface{}{
-			"id":               id,
-			"account_id":       accountID,
-			"tx_type":          txType,
-			"amount":           amount,
-			"description":      description,
-			"product_ref":      productRef,
-			"registered_by":    registeredBy,
-			"approved_by":      approvedBy,
-			"approved_at":      approvedAt,
+			"id":                id,
+			"account_id":        accountID,
+			"tx_type":           txType,
+			"amount":            amount,
+			"description":       description,
+			"product_ref":       productRef,
+			"registered_by":     registeredBy,
+			"approved_by":       approvedBy,
+			"approved_at":       approvedAt,
 			"requires_approval": requiresApproval,
-			"is_approved":      isApproved,
-			"created_at":       createdAt,
+			"is_approved":       isApproved,
+			"created_at":        createdAt,
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"transactions": txs})
@@ -258,15 +276,15 @@ func (h *DepartmentalAccountingHandler) listBudgets(w http.ResponseWriter, r *ht
 			continue
 		}
 		budgets = append(budgets, map[string]interface{}{
-			"id":                  id,
-			"period":              period,
-			"period_start":        periodStart,
-			"period_end":          periodEnd,
-			"income_budget":       incomeBudget,
-			"expense_budget":      expenseBudget,
-			"labor_hours_budget":  laborHoursBudget,
-			"status":              status,
-			"created_at":          createdAt,
+			"id":                 id,
+			"period":             period,
+			"period_start":       periodStart,
+			"period_end":         periodEnd,
+			"income_budget":      incomeBudget,
+			"expense_budget":     expenseBudget,
+			"labor_hours_budget": laborHoursBudget,
+			"status":             status,
+			"created_at":         createdAt,
 		})
 	}
 	writeJSON(w, 200, map[string]interface{}{"budgets": budgets})

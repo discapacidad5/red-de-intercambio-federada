@@ -593,5 +593,18 @@
   "conflicts_help_resolve_label": "Como resolver:",
   "conflicts_help_resolve": "Para cada conflicto, puedes proponer una resolucion: mantener saldo A, mantener saldo B, o combinar ambos. Agrega notas explicando tu decision.",
   "conflicts_help_vote_label": "Votacion:",
-  "conflicts_help_vote": "Las resoluciones propuestas deben ser votadas por la asamblea. Puedes votar aprobar o rechazar cada propuesta."
+  "conflicts_help_vote": "Las resoluciones propuestas deben ser votadas por la asamblea. Puedes votar aprobar o rechazar cada propuesta.",
+  "contact_msg_placeholder": "Hola, somos la aldea X de [pais] y nos gustaria conocerlos...",
+  "contact_info_placeholder": "ej: maria@mi-aldea.com o +1234567890",
+  "response_interested_ph": "Gracias por contactarnos! Nos gustaria conocernos. Podemos coordinar una reunion...",
+  "response_reject_ph": "Gracias por su interes, pero por ahora no podemos federar...",
+  "admin_contact_placeholder": "ej: admin@mi-aldea.com o +1234567890",
+  "contact_meeting_hint": "Como pueden contactarte del otro nodo para coordinar la reunion",
+  "peer_domain_ph": "Ej: nodo-b.org",
+  "peer_name_ph": "Ej: Banco Comunitario B",
+  "peer_notes_ph": "Ej: Nodo de la comunidad vecina del norte",
+  "proposal_desc_ph": "Ej: Aumentar la canasta basica de 500 a 600 TQ debido al aumento del costo de los alimentos basicos.",
+  "problem_node_ph": "Ej: aldea-problematica.com",
+  "complaint_ph": "Ej: El nodo se niega sistemanticamente a votar propuestas, bloqueando cambios que benefician a toda la federacion.",
+  "limit_reason_ph": "Ej: Aumentamos el comercio con este nodo, necesitamos mas limite"
 }

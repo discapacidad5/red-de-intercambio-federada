@@ -52,6 +52,11 @@ func NewRouterWithAuthAndBasePath(h *Handler, ah *AuthHandlers, fh *FederationHa
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(corsMiddleware(corsOrigins))
 
+	// Localizar campos error/message/detail de respuestas JSON segun el
+	// idioma del request; registra los textos como fuentes 'api_message'
+	// para el modulo de traducciones.
+	r.Use(i18nResponseMiddleware(pool, h.nodeDomain))
+
 	// Cuando basePath esta seteado (ej: nodo padre con basePath="/main"
 	// o nodo demo con basePath="/demo"), strip basePath de las llamadas API
 	// para que funcionen las rutas internas.
@@ -328,6 +333,10 @@ func NewRouterWithAuthAndBasePath(h *Handler, ah *AuthHandlers, fh *FederationHa
 	transH.RegisterRoutes(r, am)
 	// Auto-seed: cargar claves de los JSON a la BD al arrancar
 	go transH.AutoSeed(context.Background())
+	// Registrar fuentes traducibles del catalogo de servicios (vive en codigo Go)
+	go registerServiceCatalogSources(context.Background(), pool)
+	// Registrar fuentes traducibles de los presets de nodo (viven en la BD)
+	go registerNodePresetSources(context.Background(), pool)
 
 	// Servir imagenes subidas desde /uploads/
 	r.Get("/uploads/*", func(w http.ResponseWriter, r *http.Request) {

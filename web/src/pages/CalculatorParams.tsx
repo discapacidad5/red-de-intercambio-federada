@@ -8,7 +8,7 @@ import { HelpCircle, Plus, Edit, Trash2, Check, Search, Zap, Package } from 'luc
 import { fmtNumber } from '../lib/format'
 
 export default function CalculatorParams() {
-  const { t } = useTranslation('common')
+  const { t, i18n } = useTranslation('common')
   const tc = (name: string) => t(`calc_category.${name}`, { defaultValue: name })
   const tp = (name: string) => t(`calc_param.${name}`, { defaultValue: name })
   const { hasPermission } = usePermissions()
@@ -54,7 +54,7 @@ export default function CalculatorParams() {
   useEffect(() => {
     load()
     api.get('/calculator/tariff').then((d: any) => setTariff(d)).catch(() => setTariff(null))
-  }, [tab])
+  }, [tab, i18n.language])
 
   // base_rate = canasta_vital / horas_por_dia
   const baseRate = tariff

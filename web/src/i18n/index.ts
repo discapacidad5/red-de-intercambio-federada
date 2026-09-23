@@ -42,6 +42,12 @@ import enSatellite from '../locales/en/satellite.json'
 import esTranslations from '../locales/es/translations.json'
 import enTranslations from '../locales/en/translations.json'
 
+// Codigos de idioma validos (BCP-47 basico: es, en, pt-BR, etc.)
+const LANG_RE = /^[a-z]{2,3}(-[a-zA-Z0-9]{2,8})?$/i
+export function isValidLangCode(code: string | null | undefined): code is string {
+  return !!code && LANG_RE.test(code)
+}
+
 // Función para obtener el idioma inicial desde URL, localStorage o navegador
 export function getInitialLanguage(): string {
   // 0. URL param ?lang= (máxima prioridad para navegación y enlaces directos)
@@ -49,7 +55,7 @@ export function getInitialLanguage(): string {
     if (typeof window !== 'undefined' && window.location) {
       const urlParams = new URLSearchParams(window.location.search)
       const langParam = urlParams.get('lang')?.toLowerCase()
-      if (langParam === 'en' || langParam === 'es') {
+      if (isValidLangCode(langParam)) {
         localStorage.setItem('user_language', langParam)
         return langParam
       }
@@ -58,16 +64,15 @@ export function getInitialLanguage(): string {
 
   // 1. localStorage (preferencia del usuario)
   const stored = localStorage.getItem('user_language')
-  if (stored) return stored
+  if (stored && isValidLangCode(stored)) return stored
 
   // 2. localStorage (idioma del nodo configurado en setup)
   const nodeLang = localStorage.getItem('node_default_language')
-  if (nodeLang) return nodeLang
+  if (nodeLang && isValidLangCode(nodeLang)) return nodeLang
 
-  // 3. Navegador
+  // 3. Navegador (cualquier idioma: el backend/i18next hacen fallback al default)
   const browserLang = navigator.language?.split('-')[0]
-  if (browserLang === 'en') return 'en'
-  if (browserLang === 'es') return 'es'
+  if (isValidLangCode(browserLang)) return browserLang
 
   // 4. Default
   return 'es'

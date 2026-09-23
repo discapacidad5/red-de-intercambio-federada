@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useTranslation } from 'react-i18next'
 import i18next from 'i18next'
 import { changeLanguage } from '../i18n/TranslationProvider'
+import { isValidLangCode } from '../i18n'
 import { assetUrl } from '../utils/assetUrl'
 import {
   Home,
@@ -136,10 +137,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
   const [showLoginModal, setShowLoginModal] = useState(false)
 
   const urlLang = searchParams.get('lang')?.toLowerCase()
-  const currentEffectiveLang = (urlLang === 'en' || urlLang === 'es') ? urlLang : (publicI18n.language || 'es')
+  const currentEffectiveLang = isValidLangCode(urlLang) ? urlLang : (publicI18n.language || 'es')
 
   useEffect(() => {
-    if (urlLang && (urlLang === 'en' || urlLang === 'es') && urlLang !== publicI18n.language) {
+    if (urlLang && isValidLangCode(urlLang) && urlLang !== publicI18n.language) {
       changeLanguage(urlLang)
     }
   }, [urlLang, publicI18n.language])
@@ -1645,7 +1646,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           </div>
           {otherPages.length > 0 && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-white/60 font-bold mb-1.5">Otros</p>
+              <p className="text-[10px] uppercase tracking-wider text-white/60 font-bold mb-1.5">{tpub('others', 'Others')}</p>
               <div className="space-y-0.5">
                 {otherPages.map((p) => (
                   <Link key={p.slug} to={`/p/${p.slug}`} onClick={() => setMenuOpen(false)} className="block px-3 py-1.5 rounded-lg text-sm hover:bg-white/10">
@@ -1764,10 +1765,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             })}
             <div className="pt-3 border-t border-white/10 space-y-2">
               {settings?.show_join_form && !isAuthenticated && (
-                <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: secondaryColor }}>Unirse</Link>
+                <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: secondaryColor }}>{tpub('join', 'Join')}</Link>
               )}
               {!isAuthenticated && (
-                <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-1.5 rounded-lg text-xs text-white/80 border border-white/20">Acceso</button>
+                <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-1.5 rounded-lg text-xs text-white/80 border border-white/20">{tpub('login', 'Log in')}</button>
               )}
             </div>
           </div>
@@ -1788,10 +1789,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           })}
           <div className="pt-2 border-t border-white/10 space-y-1.5">
             {settings?.show_join_form && !isAuthenticated && (
-              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-lg text-xs font-bold text-white shadow" style={{ backgroundColor: secondaryColor }}>Unirse</Link>
+              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-lg text-xs font-bold text-white shadow" style={{ backgroundColor: secondaryColor }}>{tpub('join', 'Join')}</Link>
             )}
             {!isAuthenticated && (
-              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block text-center px-3 py-1.5 rounded-lg text-xs text-white/90 hover:bg-white/10">Acceso Miembros</button>
+              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block text-center px-3 py-1.5 rounded-lg text-xs text-white/90 hover:bg-white/10">{tpub('member_access', 'Member Access')}</button>
             )}
           </div>
         </div>
@@ -1810,10 +1811,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           })}
           <div className="pt-2 border-t border-gray-100 space-y-1.5">
             {settings?.show_join_form && !isAuthenticated && (
-              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-full text-xs font-bold text-white" style={{ backgroundColor: primaryColor }}>Unirse</Link>
+              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-full text-xs font-bold text-white" style={{ backgroundColor: primaryColor }}>{tpub('join', 'Join')}</Link>
             )}
             {!isAuthenticated && (
-              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block text-center px-3 py-1.5 rounded-full text-xs font-medium border" style={{ color: primaryColor, borderColor: primaryColor }}>Acceso</button>
+              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block text-center px-3 py-1.5 rounded-full text-xs font-medium border" style={{ color: primaryColor, borderColor: primaryColor }}>{tpub('login', 'Log in')}</button>
             )}
           </div>
         </div>
@@ -1838,10 +1839,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="pt-3 border-t border-white/10 space-y-2">
             {settings?.show_join_form && !isAuthenticated && (
-              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2.5 rounded-xl text-sm font-bold text-white" style={{ backgroundColor: secondaryColor }}>Unirse a la Red</Link>
+              <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2.5 rounded-xl text-sm font-bold text-white" style={{ backgroundColor: secondaryColor }}>{tpub('join_network', 'Join the Network')}</Link>
             )}
             {!isAuthenticated && (
-              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-2 rounded-xl text-sm text-white/90 border border-white/30">Acceso Miembros</button>
+              <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-2 rounded-xl text-sm text-white/90 border border-white/30">{tpub('member_access', 'Member Access')}</button>
             )}
           </div>
         </div>
@@ -1865,10 +1866,10 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
             })}
             <div className="pt-3 border-t border-gray-100 space-y-2">
               {settings?.show_join_form && !isAuthenticated && (
-                <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-full text-xs font-bold text-white" style={{ backgroundColor: secondaryColor }}>Unirse</Link>
+                <Link to="/p/unirse" onClick={() => setMenuOpen(false)} className="block w-full text-center px-3 py-2 rounded-full text-xs font-bold text-white" style={{ backgroundColor: secondaryColor }}>{tpub('join', 'Join')}</Link>
               )}
               {!isAuthenticated && (
-                <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-1.5 rounded-full text-xs font-medium border" style={{ color: primaryColor, borderColor: primaryColor }}>Acceso</button>
+                <button onClick={() => { setMenuOpen(false); setShowLoginModal(true) }} className="block w-full text-center px-3 py-1.5 rounded-full text-xs font-medium border" style={{ color: primaryColor, borderColor: primaryColor }}>{tpub('login', 'Log in')}</button>
               )}
             </div>
           </div>
@@ -2001,7 +2002,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               ) : (
                 <button onClick={() => setShowLoginModal(true)} className="text-gray-400 hover:text-white transition">
-                  Acceso exclusivo miembros y productores
+                  {tpub('member_only_access', 'Members and producers access only')}
                 </button>
               )}
             </div>
@@ -2099,7 +2100,7 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setShowAdminMenu(!showAdminMenu)}
             className="bg-gray-900 hover:bg-gray-800 text-white w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition"
-            title="Opciones de administración"
+            title={tpub('admin_options', 'Administration options')}
           >
             {showAdminMenu ? <X size={22} /> : <Edit size={22} />}
           </button>
@@ -2203,13 +2204,13 @@ export function PublicPageView() {
   const [page, setPage] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [isLiveEditing, setIsLiveEditing] = useState(false)
-  const { i18n: pageI18n } = useTranslation(['public', 'common'])
+  const { t: tpub, i18n: pageI18n } = useTranslation(['public', 'common'])
 
   const urlLang = searchParams.get('lang')?.toLowerCase()
-  const activeLang = (urlLang === 'en' || urlLang === 'es') ? urlLang : (pageI18n.language || 'es')
+  const activeLang = isValidLangCode(urlLang) ? urlLang : (pageI18n.language || 'es')
 
   useEffect(() => {
-    if (urlLang && (urlLang === 'en' || urlLang === 'es') && urlLang !== pageI18n.language) {
+    if (urlLang && isValidLangCode(urlLang) && urlLang !== pageI18n.language) {
       changeLanguage(urlLang)
     }
   }, [urlLang, pageI18n.language])
@@ -2285,7 +2286,7 @@ export function PublicPageView() {
     return (
       <div className="text-center py-24 space-y-3">
         <div className="w-10 h-10 rounded-full border-4 border-emerald-600 border-t-transparent animate-spin mx-auto" />
-        <p className="text-gray-500 font-medium text-xs">Cargando contenido...</p>
+        <p className="text-gray-500 font-medium text-xs">{tpub('loading_content', 'Loading content...')}</p>
       </div>
     )
   }
@@ -2373,8 +2374,8 @@ export function PublicPageView() {
         <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
           <HelpCircle size={28} />
         </div>
-        <h2 className="text-xl font-bold text-gray-800">Página no encontrada</h2>
-        <p className="text-xs text-gray-600">La página solicitada no está disponible o ha sido movida.</p>
+        <h2 className="text-xl font-bold text-gray-800">{tpub('page_not_found', 'Page not found')}</h2>
+        <p className="text-xs text-gray-600">{tpub('page_not_found_desc', 'The requested page is not available or has been moved.')}</p>
         <Link
           to="/p/inicio"
           className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold text-white bg-trueque-700 hover:bg-trueque-800 transition text-xs shadow"
