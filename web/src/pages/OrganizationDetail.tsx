@@ -829,12 +829,47 @@ function OrgTerminals({ orgID }: { orgID: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [subView, setSubView] = useState<'list' | 'shifts' | 'transactions'>('list')
+  const [opsTerminal, setOpsTerminal] = useState<any | null>(null)
+  const [operators, setOperators] = useState<any[]>([])
+  const [opsLoading, setOpsLoading] = useState(false)
+  const [newOperatorId, setNewOperatorId] = useState('')
 
   useEffect(() => {
     loadTerminals()
     loadMembers()
     loadDepartments()
   }, [orgID])
+
+  const loadOperators = async (terminalID: string) => {
+    setOpsLoading(true)
+    try {
+      const res = await api.get<any[]>(`/nfc/org-terminals/${orgID}/${terminalID}/authorized-users`)
+      setOperators(res || [])
+    } catch { setOperators([]) } finally { setOpsLoading(false) }
+  }
+
+  const handleOpenOperators = (term: any) => {
+    setOpsTerminal(term)
+    setNewOperatorId('')
+    loadOperators(term.terminal_id)
+  }
+
+  const handleAddOperator = async () => {
+    if (!opsTerminal || !newOperatorId) return
+    try {
+      await api.post(`/nfc/org-terminals/${orgID}/${opsTerminal.terminal_id}/authorized-users`, { user_id: newOperatorId })
+      setNewOperatorId('')
+      loadOperators(opsTerminal.terminal_id)
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const handleRemoveOperator = async (userID: string) => {
+    if (!opsTerminal) return
+    try {
+      await api.delete(`/nfc/org-terminals/${orgID}/${opsTerminal.terminal_id}/authorized-users/${userID}`)
+      loadOperators(opsTerminal.terminal_id)
+    } catch (e: any) { setError(e.message) }
+  }
 
   const loadTerminals = async () => {
     setLoading(true)
@@ -1035,6 +1070,9 @@ function OrgTerminals({ orgID }: { orgID: string }) {
                 <button onClick={() => handleAssignDept(term.terminal_id)} className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-medium flex items-center gap-1">
                   <Building2 size={14} /> {t('detail_terminals_assign_dept')}
                 </button>
+                <button onClick={() => handleOpenOperators(term)} className="px-3 py-1.5 bg-cyan-50 text-cyan-600 rounded-lg text-xs font-medium flex items-center gap-1">
+                  <Users size={14} /> {t('detail_terminals_operators', 'Operadores')}
+                </button>
                 <button onClick={() => handleToggle(term.terminal_id)} className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 ${
                   term.is_active ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
                 }`}>
@@ -1043,6 +1081,57 @@ function OrgTerminals({ orgID }: { orgID: string }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Panel de operadores autorizados del punto seleccionado */}
+      {opsTerminal && (
+        <div className="card mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Users size={18} className="text-cyan-600" />
+              {t('detail_terminals_operators_title', 'Operadores autorizados')}: {opsTerminal.label}
+            </h3>
+            <button onClick={() => setOpsTerminal(null)} className="px-3 py-1 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">
+              {t('common:close', 'Cerrar')}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            {t('detail_terminals_operators_desc', 'Estas personas pueden iniciar sesión y operar este punto de venta (además del operador principal y los miembros del board).')}
+          </p>
+          <div className="flex gap-2 mb-3">
+            <select value={newOperatorId} onChange={(e) => setNewOperatorId(e.target.value)} className="input flex-1">
+              <option value="">{t('detail_terminals_select_member', 'Selecciona un miembro...')}</option>
+              {members.map((m: any) => (
+                <option key={m.id} value={m.id}>{m.display_name || m.username} (@{m.username})</option>
+              ))}
+            </select>
+            <button onClick={handleAddOperator} disabled={!newOperatorId} className="btn-primary disabled:opacity-50">
+              {t('common:add', 'Agregar')}
+            </button>
+          </div>
+          {opsLoading ? (
+            <p className="text-xs text-gray-400">{t('common:loading', 'Cargando...')}</p>
+          ) : operators.length === 0 ? (
+            <p className="text-xs text-gray-400">{t('detail_terminals_no_operators', 'Sin operadores adicionales asignados.')}</p>
+          ) : (
+            <div className="space-y-2">
+              {operators.map((op: any) => (
+                <div key={op.user_id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                  <div>
+                    <span className="text-sm font-medium">{op.display_name || op.username}</span>
+                    <span className="text-xs text-gray-400 ml-2">@{op.username}</span>
+                    {op.source === 'department' && <span className="text-xs text-indigo-500 ml-2">({t('detail_terminals_via_dept', 'por departamento')})</span>}
+                  </div>
+                  {op.source !== 'department' && (
+                    <button onClick={() => handleRemoveOperator(op.user_id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg" title={t('common:remove', 'Quitar')}>
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

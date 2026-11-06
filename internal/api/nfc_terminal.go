@@ -2447,14 +2447,8 @@ func (h *NFCTerminalHandler) setShiftPin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Verify the user is the owner of the terminal
-	var termDBID uuid.UUID
-	err = h.NFC.Pool.QueryRow(r.Context(), `
-		SELECT id FROM nfc_terminals
-		WHERE terminal_id = $1 AND merchant_user_id = $2`,
-		terminalID, userID,
-	).Scan(&termDBID)
-	if err != nil {
+	// Solo quien gestiona el punto (dueño, operador u org-admin) configura el PIN
+	if !h.verifyMyTerminalOwnership(r, terminalID, userID) {
 		writeError(w, 404, "terminal not found or you are not the owner")
 		return
 	}
@@ -2467,8 +2461,8 @@ func (h *NFCTerminalHandler) setShiftPin(w http.ResponseWriter, r *http.Request)
 	}
 
 	_, err = h.NFC.Pool.Exec(r.Context(), `
-		UPDATE nfc_terminals SET shift_pin_hash = $1 WHERE id = $2`,
-		string(hashedPIN), termDBID,
+		UPDATE nfc_terminals SET shift_pin_hash = $1 WHERE terminal_id = $2`,
+		string(hashedPIN), terminalID,
 	)
 	if err != nil {
 		writeError(w, 500, "failed to save PIN")
@@ -2573,13 +2567,7 @@ func (h *NFCTerminalHandler) setAdminPin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var termDBID uuid.UUID
-	err = h.NFC.Pool.QueryRow(r.Context(), `
-		SELECT id FROM nfc_terminals
-		WHERE terminal_id = $1 AND merchant_user_id = $2`,
-		terminalID, userID,
-	).Scan(&termDBID)
-	if err != nil {
+	if !h.verifyMyTerminalOwnership(r, terminalID, userID) {
 		writeError(w, 404, "terminal not found or you are not the owner")
 		return
 	}
@@ -2591,8 +2579,8 @@ func (h *NFCTerminalHandler) setAdminPin(w http.ResponseWriter, r *http.Request)
 	}
 
 	_, err = h.NFC.Pool.Exec(r.Context(), `
-		UPDATE nfc_terminals SET admin_pin_hash = $1 WHERE id = $2`,
-		string(hashedPIN), termDBID,
+		UPDATE nfc_terminals SET admin_pin_hash = $1 WHERE terminal_id = $2`,
+		string(hashedPIN), terminalID,
 	)
 	if err != nil {
 		writeError(w, 500, "failed to save PIN")
@@ -2700,14 +2688,8 @@ func (h *NFCTerminalHandler) setDestinationAccount(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Solo el dueño del terminal puede elegir a dónde van los fondos del punto
-	var termDBID uuid.UUID
-	err = h.NFC.Pool.QueryRow(r.Context(), `
-		SELECT id FROM nfc_terminals
-		WHERE terminal_id = $1 AND merchant_user_id = $2`,
-		terminalID, userID,
-	).Scan(&termDBID)
-	if err != nil {
+	// Solo quien gestiona el punto (dueño u org-admin) decide a dónde van los fondos
+	if !h.verifyMyTerminalOwnership(r, terminalID, userID) {
 		writeError(w, 404, "terminal not found or you are not the owner")
 		return
 	}
@@ -2732,13 +2714,35 @@ func (h *NFCTerminalHandler) setDestinationAccount(w http.ResponseWriter, r *htt
 
 // --- My terminals: operadores autorizados (solo el dueño) ---
 
-// verifyMyTerminalOwnership devuelve true si el usuario autenticado es el
-// dueño (merchant_user_id) del terminal.
+// verifyMyTerminalOwnership devuelve true si el usuario autenticado puede
+// gestionar el terminal: es el dueño directo (merchant_user_id), operador
+// asignado, o miembro del board de la organización dueña del punto.
 func (h *NFCTerminalHandler) verifyMyTerminalOwnership(r *http.Request, terminalID string, userID uuid.UUID) bool {
 	var count int
 	err := h.NFC.Pool.QueryRow(r.Context(), `
 		SELECT COUNT(*) FROM nfc_terminals
 		WHERE terminal_id = $1 AND merchant_user_id = $2`,
+		terminalID, userID,
+	).Scan(&count)
+	if err == nil && count > 0 {
+		return true
+	}
+
+	// Operador asignado explícitamente
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM nfc_terminal_authorized_users
+		WHERE terminal_id = $1 AND user_id = $2`,
+		terminalID, userID,
+	).Scan(&count)
+	if err == nil && count > 0 {
+		return true
+	}
+
+	// Board member de la organización dueña del punto
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM nfc_terminals t
+		JOIN organization_board_members obm ON obm.organization_id = t.organization_id
+		WHERE t.terminal_id = $1 AND obm.user_id = $2`,
 		terminalID, userID,
 	).Scan(&count)
 	return err == nil && count > 0
