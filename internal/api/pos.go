@@ -633,6 +633,42 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Tarifa energética del nodo: precio_hora real por tipo de trabajo
+	// (vital_total / work_hours_per_day × multiplicador effort_admin/technical/agricultural).
+	// Los servicios universales de trabajo se calculan con esto, no con el
+	// price_per_unit crudo sembrado — así la jornada completa usa las horas
+	// configuradas en el nodo (8, 5, etc.) y el multiplicador del tipo de trabajo.
+	var vitalTotal, effAdmin, effTech, effAgr float64
+	var workHours int
+	tErr := h.Pool.QueryRow(ctx, `
+		SELECT vital_food + vital_water + vital_domestic + vital_services,
+		       work_hours_per_day, effort_admin, effort_technical, effort_agricultural
+		FROM energy_tariff WHERE node_domain = $1`, h.NodeDomain,
+	).Scan(&vitalTotal, &workHours, &effAdmin, &effTech, &effAgr)
+	baseRate := 0.0
+	if tErr == nil && workHours > 0 {
+		baseRate = vitalTotal / float64(workHours)
+	}
+	laborRate := func(cat, name, unit string) float64 {
+		if baseRate <= 0 {
+			return 0
+		}
+		lc := strings.ToLower(cat + " " + name)
+		rate := baseRate
+		switch {
+		case strings.Contains(lc, "agricola") || strings.Contains(lc, "conuco") || strings.Contains(lc, "mano vuelta") || strings.Contains(lc, "pesado"):
+			rate = baseRate * effAgr
+		case strings.Contains(lc, "tecnico") || strings.Contains(lc, "técnico"):
+			rate = baseRate * effTech
+		case strings.Contains(lc, "intelectual") || strings.Contains(lc, "oficina") || strings.Contains(lc, "admin"):
+			rate = baseRate * effAdmin
+		}
+		if strings.EqualFold(unit, "jornada") || strings.Contains(lc, "jornada completa") {
+			return rate * float64(workHours)
+		}
+		return rate
+	}
+
 	// 2. Servicios universales del nodo (ej: Trabajo en el Conuco / Mano Vuelta)
 	uRows, uErr := h.Pool.Query(ctx, `
 		SELECT id::text, COALESCE(item_code, '90001'), name, COALESCE(category, 'Servicios'),
@@ -655,6 +691,11 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			}
 			if existingProdIDs[pid] {
 				continue
+			}
+			// Precio real del trabajo: tarifa del nodo por tipo (normal/oficina/
+			// técnico/agrícola) y por horas de jornada configuradas.
+			if laborPrice := laborRate(cat, name, unit); laborPrice > 0 {
+				price = laborPrice
 			}
 			priceCents := int64(price)
 			if price > 0 && (price != float64(int64(price)) || price < 50) {
