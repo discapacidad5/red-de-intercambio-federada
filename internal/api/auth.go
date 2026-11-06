@@ -779,6 +779,22 @@ func (ah *AuthHandlers) getMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-validación continua del operador del POS: si la llamada viene de un
+	// terminal (X-Terminal-ID), el usuario debe seguir autorizado para ese
+	// punto — así desautorizar a alguien surte efecto en la próxima
+	// validación online, sin importar que su sesión local siga abierta.
+	if terminalIDHeader := strings.TrimSpace(r.Header.Get("X-Terminal-ID")); terminalIDHeader != "" {
+		authorized, authErr := isUserAuthorizedForTerminal(r.Context(), ah.Pool, terminalIDHeader, userID)
+		if authErr != nil {
+			writeError(w, 403, "terminal_not_registered")
+			return
+		}
+		if !authorized {
+			writeError(w, 403, "not_authorized_for_terminal")
+			return
+		}
+	}
+
 	user, err := ah.Accounts.GetUser(r.Context(), userID)
 	if err != nil {
 		writeError(w, 404, "user not found")
