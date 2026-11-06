@@ -559,6 +559,7 @@ type AddStoreItemRequest struct {
 	ExtraDescription string     `json:"extra_description"`
 	Stock            int64      `json:"stock"`
 	ExternalOpID     *uuid.UUID `json:"external_op_id"`
+	OwnerID          string     `json:"owner_id,omitempty"`
 }
 
 func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) {
@@ -573,6 +574,32 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 	var ownerID *uuid.UUID
 	if ownerIDVal != uuid.Nil {
 		ownerID = &ownerIDVal
+	}
+
+	// Tienda de organización: si el request indica otro owner (la org),
+	// el llamador debe ser board member de esa organización — así la org
+	// tiene su propia tienda administrada por sus autorizados.
+	if req.OwnerID != "" {
+		target, tErr := uuid.Parse(strings.TrimSpace(req.OwnerID))
+		if tErr != nil {
+			writeError(w, 400, "invalid owner_id")
+			return
+		}
+		if target != ownerIDVal {
+			var acctType string
+			var isBoard bool
+			err := eh.Pool.QueryRow(r.Context(), `
+				SELECT COALESCE(u.account_type,''), EXISTS(
+					SELECT 1 FROM organization_board_members
+					WHERE organization_id = $1 AND user_id = $2 AND COALESCE(is_active, true) = true
+				) FROM users u WHERE u.id = $1`, target, ownerIDVal,
+			).Scan(&acctType, &isBoard)
+			if err != nil || acctType != "organization" || !isBoard {
+				writeError(w, 403, "solo miembros del board de la organización pueden gestionar su tienda")
+				return
+			}
+			ownerID = &target
+		}
 	}
 
 	var productID *uuid.UUID

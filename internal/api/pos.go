@@ -552,18 +552,35 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			sellerCardUID,
 		).Scan(&sellerID)
 	}
-	if sellerID == uuid.Nil {
-		if uid, err := getUserID(r); err == nil && uid != uuid.Nil {
-			sellerID = uid
+	// La tienda del POS es la de la ENTIDAD ASIGNADA al punto (persona u
+	// organización), nunca la del operador que inició sesión — el operador
+	// solo está autorizado a vender en nombre de esa entidad.
+	termHeader := strings.TrimSpace(r.Header.Get("X-Terminal-ID"))
+	if sellerID == uuid.Nil && termHeader != "" {
+		var orgID, deptID, merchantID *uuid.UUID
+		_ = h.Pool.QueryRow(ctx, `
+			SELECT organization_id, department_id, merchant_user_id
+			FROM nfc_terminals WHERE terminal_id = $1 AND is_active = true LIMIT 1`,
+			termHeader,
+		).Scan(&orgID, &deptID, &merchantID)
+		if orgID != nil {
+			sellerID = *orgID
+		} else if deptID != nil {
+			// Punto de departamento: la tienda es la de la org padre si existe
+			var parentOrg *uuid.UUID
+			_ = h.Pool.QueryRow(ctx, `SELECT parent_organization_id FROM departments WHERE id = $1`, *deptID).Scan(&parentOrg)
+			if parentOrg != nil {
+				sellerID = *parentOrg
+			} else if merchantID != nil {
+				sellerID = *merchantID
+			}
+		} else if merchantID != nil {
+			sellerID = *merchantID
 		}
 	}
 	if sellerID == uuid.Nil {
-		termHeader := strings.TrimSpace(r.Header.Get("X-Terminal-ID"))
-		if termHeader != "" {
-			_ = h.Pool.QueryRow(ctx, `
-				SELECT merchant_user_id FROM nfc_terminals WHERE terminal_id = $1 AND is_active = true LIMIT 1`,
-				termHeader,
-			).Scan(&sellerID)
+		if uid, err := getUserID(r); err == nil && uid != uuid.Nil {
+			sellerID = uid
 		}
 	}
 

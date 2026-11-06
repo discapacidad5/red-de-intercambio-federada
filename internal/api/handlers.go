@@ -179,10 +179,11 @@ func (h *Handler) getTransactionHistory(w http.ResponseWriter, r *http.Request) 
 }
 
 type TransferRequest struct {
-	ReceiverID string `json:"receiver_id"`
-	ToUser     string `json:"to_user"`
-	Amount     int64  `json:"amount"`
-	Reference  string `json:"reference"`
+	ReceiverID   string `json:"receiver_id"`
+	ToUser       string `json:"to_user"`
+	DepartmentID string `json:"department_id,omitempty"`
+	Amount       int64  `json:"amount"`
+	Reference    string `json:"reference"`
 }
 
 func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
@@ -240,8 +241,69 @@ func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
 			WHERE node_domain = $1 AND username = 'asamblea' LIMIT 1`, h.nodeDomain).Scan(&receiverID, &receiverUsername)
 	}
 
-	if receiverID == uuid.Nil || receiverUsername != "asamblea" {
-		writeError(w, 403, "Las transferencias directas de saldo libre entre miembros u organizaciones estan prohibidas. Todo intercambio debe realizarse mediante canasta de productos o servicios de la tienda. Solo se permiten aportes o prestamos directos a la Asamblea General.")
+	// REGLA: nadie transfiere saldo libre entre miembros/organizaciones,
+	// EXCEPTO: (a) a la Asamblea General siempre, y (b) cuando el EMISOR es
+	// una organización — que sí puede repartir saldo a SUS miembros y a las
+	// cuentas de SUS departamentos (asignaciones internas), nunca a otra org
+	// ni a personas ajenas. Los miembros pagan a la org vía tienda/tickets,
+	// no por transferencia directa.
+	var senderAccountType string
+	_ = h.Pool.QueryRow(r.Context(), `SELECT COALESCE(account_type, '') FROM users WHERE id = $1`, senderID).Scan(&senderAccountType)
+	isOrgSender := senderAccountType == "organization"
+
+	// Destino departamental: solo si el emisor es la org dueña del departamento
+	var deptAcctID *uuid.UUID
+	if req.DepartmentID != "" {
+		deptID, dErr := uuid.Parse(req.DepartmentID)
+		if dErr != nil {
+			writeError(w, 400, "invalid department_id")
+			return
+		}
+		if !isOrgSender {
+			writeError(w, 403, "solo una organización puede transferir a sus departamentos")
+			return
+		}
+		var parentOrg *uuid.UUID
+		err = h.Pool.QueryRow(r.Context(), `
+			SELECT parent_organization_id FROM departments WHERE id = $1`, deptID).Scan(&parentOrg)
+		if err != nil || parentOrg == nil || *parentOrg != senderID {
+			writeError(w, 403, "solo puedes transferir a departamentos de tu propia organización")
+			return
+		}
+		// Acreditar la cuenta asset activa del departamento
+		err = h.Pool.QueryRow(r.Context(), `
+			SELECT id FROM department_accounts
+			WHERE department_id = $1 AND is_active = true AND account_type = 'asset'
+			ORDER BY created_at ASC LIMIT 1`, deptID).Scan(&deptAcctID)
+		if err != nil || deptAcctID == nil {
+			writeError(w, 400, "el departamento no tiene cuenta activa para recibir")
+			return
+		}
+		receiverID = uuid.Nil // el destino es la cuenta del depto, no un usuario
+	}
+
+	allowed := receiverUsername == "asamblea"
+	if !allowed && receiverID != uuid.Nil && isOrgSender {
+		// Emisor org → destino debe ser miembro de ESA organización
+		// (board member o miembro de uno de sus departamentos)
+		var isMember bool
+		_ = h.Pool.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM organization_board_members
+				WHERE organization_id = $1 AND user_id = $2 AND COALESCE(is_active, true) = true
+			) OR EXISTS(
+				SELECT 1 FROM department_members dm
+				JOIN departments d ON d.id = dm.department_id
+				WHERE dm.user_id = $2 AND d.parent_organization_id = $1
+			)`, senderID, receiverID).Scan(&isMember)
+		allowed = isMember
+	}
+	if deptAcctID != nil {
+		allowed = true
+	}
+
+	if (receiverID == uuid.Nil && deptAcctID == nil) || !allowed {
+		writeError(w, 403, "Las transferencias directas de saldo libre entre miembros u organizaciones estan prohibidas. Todo intercambio debe realizarse mediante canasta de productos o servicios de la tienda. Solo se permiten aportes o prestamos directos a la Asamblea General, o transferencias de una organización a sus propios miembros y departamentos.")
 		return
 	}
 
@@ -318,6 +380,35 @@ func (h *Handler) transfer(w http.ResponseWriter, r *http.Request) {
 				taxTargetAccount = &assemblyAcctID
 			}
 		}
+	}
+
+	// Destino = cuenta de departamento: debitar emisor y acreditar la
+	// cuenta del depto directamente (department_accounts, no users.balance)
+	if deptAcctID != nil {
+		var senderBalance int64
+		err = h.Pool.QueryRow(r.Context(), `SELECT balance FROM users WHERE id = $1`, senderID).Scan(&senderBalance)
+		if err != nil || senderBalance < req.Amount {
+			writeError(w, 400, "insufficient balance")
+			return
+		}
+		_, err = h.Pool.Exec(r.Context(), `UPDATE users SET balance = balance - $2, updated_at = NOW() WHERE id = $1`, senderID, req.Amount)
+		if err != nil {
+			writeError(w, 500, "failed to debit sender")
+			return
+		}
+		_, err = h.Pool.Exec(r.Context(), `UPDATE department_accounts SET balance = balance + $2, updated_at = NOW() WHERE id = $1`, *deptAcctID, req.Amount)
+		if err != nil {
+			// Rollback del débito
+			_, _ = h.Pool.Exec(r.Context(), `UPDATE users SET balance = balance + $2, updated_at = NOW() WHERE id = $1`, senderID, req.Amount)
+			writeError(w, 500, "failed to credit department account")
+			return
+		}
+		writeJSON(w, 200, map[string]interface{}{
+			"status":  "transferred",
+			"amount":  req.Amount,
+			"to_type": "department_account",
+		})
+		return
 	}
 
 	// Verificar si la cuenta del emisor requiere multi-firma
