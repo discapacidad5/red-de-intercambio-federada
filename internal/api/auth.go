@@ -1371,10 +1371,10 @@ func isUserAuthorizedForTerminal(ctx context.Context, pool *pgxpool.Pool, termin
 		return false, err
 	}
 
-	// Sin asignar — SOLO el superadmin puede iniciar sesión en un terminal
-	// registrado que aún no tiene dueño/operadores asignados. Cualquier otro
-	// usuario recibe not_authorized_for_terminal hasta que el dueño o un
-	// administrador lo asigne explícitamente.
+	// Sin asignar — NADIE puede operar el punto (ni siquiera el superadmin).
+	// El privilegio del admin es para GESTIONAR/asignar terminales desde el
+	// panel, no para cobrar en ellos. El punto queda inoperativo hasta que
+	// el dueño o un administrador asigne operadores explícitamente.
 	if merchantUserID == nil && orgID == nil && deptID == nil {
 		var hasOperators bool
 		_ = pool.QueryRow(ctx, `
@@ -1385,12 +1385,7 @@ func isUserAuthorizedForTerminal(ctx context.Context, pool *pgxpool.Pool, termin
 			// Hay operadores asignados pero este usuario no es uno de ellos → denegar
 			return false, nil
 		}
-		var isSuper, enabled bool
-		err = pool.QueryRow(ctx, `
-			SELECT is_super_admin, super_admin_enabled FROM users WHERE id = $1`,
-			userID,
-		).Scan(&isSuper, &enabled)
-		return err == nil && isSuper && enabled, nil
+		return false, nil
 	}
 
 	// merchant_user_id coincide
