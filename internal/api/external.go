@@ -69,6 +69,8 @@ func (eh *ExternalHandler) RegisterRoutesWithAuth(r chi.Router, am *AuthMiddlewa
 		r.Put("/api/store/items/{id}/price", eh.updatePrice)
 		r.Delete("/api/store/items/{id}", eh.deactivateStoreItem)
 	}
+	// Visibilidad en el POS: el dueno decide que items aparecen en su punto de venta
+	r.With(am.RequireAuth).Put("/api/store/items/{id}/pos-visibility", eh.togglePosVisibility)
 	r.Post("/api/store/purchase", eh.purchase)
 	r.Post("/api/store/composite", eh.addCompositeItem)
 	r.Get("/api/store/composite/{id}/composition", eh.getComposition)
@@ -743,6 +745,47 @@ func (eh *ExternalHandler) deactivateStoreItem(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "deactivated"})
+}
+
+// togglePosVisibility marca si un item de la tienda del dueño aparece en el
+// catálogo del punto de venta (show_in_pos). Solo el dueño puede cambiarlo.
+func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Request) {
+	itemID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, 400, "invalid item id")
+		return
+	}
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+
+	var req struct {
+		ShowInPos bool `json:"show_in_pos"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	res, err := eh.Pool.Exec(r.Context(), `
+		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()
+		WHERE id = $2 AND owner_id = $3`,
+		req.ShowInPos, itemID, userID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to update visibility")
+		return
+	}
+	if res.RowsAffected() == 0 {
+		writeError(w, 404, "item not found or you are not the owner")
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{
+		"status":      "updated",
+		"show_in_pos": req.ShowInPos,
+	})
 }
 
 type PurchaseRequest struct {

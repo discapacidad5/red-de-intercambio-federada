@@ -140,6 +140,8 @@ func (h *NFCTerminalHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
 	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/admin-pin", h.setAdminPin)
 	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/admin-pin/verify", h.verifyAdminPin)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/admin-pin/configured", h.getAdminPinConfigured)
+	// Cuenta destino de la liquidación del punto (persona u organización)
+	r.With(am.RequireAuth).Put("/api/nfc/my-terminals/{id}/destination-account", h.setDestinationAccount)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/shifts", h.listMyTerminalShifts)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/transactions", h.exportMyTerminalTransactionsCSV)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/shifts", h.exportMyTerminalShiftsCSV)
@@ -2665,6 +2667,61 @@ func (h *NFCTerminalHandler) getAdminPinConfigured(w http.ResponseWriter, r *htt
 	configured := adminPinHash != nil && *adminPinHash != ""
 	writeJSON(w, 200, map[string]interface{}{
 		"configured": configured,
+	})
+}
+
+// setDestinationAccount configura la cuenta destino donde se liquida el
+// acumulado de la cuenta provisional del punto al cerrar turno.
+// destination_account_id puede ser un usuario o una cuenta de organización.
+func (h *NFCTerminalHandler) setDestinationAccount(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+
+	var req struct {
+		DestinationAccountID string `json:"destination_account_id"`
+		IsOrg                bool   `json:"destination_is_org"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	destID, err := uuid.Parse(strings.TrimSpace(req.DestinationAccountID))
+	if err != nil {
+		writeError(w, 400, "invalid destination_account_id")
+		return
+	}
+
+	// Solo el dueño del terminal puede elegir a dónde van los fondos del punto
+	var termDBID uuid.UUID
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT id FROM nfc_terminals
+		WHERE terminal_id = $1 AND merchant_user_id = $2`,
+		terminalID, userID,
+	).Scan(&termDBID)
+	if err != nil {
+		writeError(w, 404, "terminal not found or you are not the owner")
+		return
+	}
+
+	// Upsert: crea la cuenta provisional del punto si aún no existe
+	_, err = h.NFC.Pool.Exec(r.Context(), `
+		INSERT INTO pos_accounts (node_domain, terminal_id, destination_account_id, destination_is_org, updated_at)
+		VALUES ($1, $2, $3, $4, NOW())
+		ON CONFLICT (terminal_id)
+		DO UPDATE SET destination_account_id = $3, destination_is_org = $4, updated_at = NOW()`,
+		h.NodeDomain, terminalID, destID, req.IsOrg,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to save destination account")
+		return
+	}
+
+	writeJSON(w, 200, map[string]interface{}{
+		"status": "configured",
 	})
 }
 
