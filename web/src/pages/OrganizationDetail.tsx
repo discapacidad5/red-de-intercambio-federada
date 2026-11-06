@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { api, apiFetch } from '../api'
 import { useConfig } from '../hooks/useConfig'
 import { usePermissions } from '../hooks/usePermissions'
-import { ArrowLeft, Users, Wallet as WalletIcon, Vote as VoteIcon, Settings, Crown, Plus, Trash2, ArrowUpCircle, ArrowDownCircle, FileText, Building2, Plug, Landmark, ExternalLink, ShoppingBag, UserCheck, Power, Eye, Clock } from 'lucide-react'
+import { ArrowLeft, Users, Wallet as WalletIcon, Vote as VoteIcon, Settings, Crown, Plus, Trash2, ArrowUpCircle, ArrowDownCircle, FileText, Building2, Plug, Landmark, ExternalLink, ShoppingBag, UserCheck, Power, Eye, Clock, Store as StoreIcon, Package } from 'lucide-react'
 import ScopedAssembly from '../components/ScopedAssembly'
 import { fmtTQ, toCents, fmtDateTime } from '../lib/format'
 
@@ -15,8 +15,8 @@ export default function OrganizationDetail() {
   const { currency } = useConfig()
   const { hasPermission } = usePermissions()
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialTab = (searchParams.get('tab') as 'info' | 'board' | 'members' | 'departments' | 'services' | 'wallet' | 'assembly' | 'boardmeetings' | 'terminals') || 'info'
-  const [tab, setTab] = useState<'info' | 'board' | 'members' | 'departments' | 'services' | 'wallet' | 'assembly' | 'boardmeetings' | 'terminals'>(initialTab)
+  const initialTab = (searchParams.get('tab') as 'info' | 'board' | 'members' | 'departments' | 'services' | 'wallet' | 'assembly' | 'boardmeetings' | 'terminals' | 'store') || 'info'
+  const [tab, setTab] = useState<'info' | 'board' | 'members' | 'departments' | 'services' | 'wallet' | 'assembly' | 'boardmeetings' | 'terminals' | 'store'>(initialTab)
   const changeTab = (t: 'info' | 'board' | 'members' | 'departments' | 'services' | 'wallet' | 'assembly' | 'boardmeetings' | 'terminals') => {
     setTab(t)
     setSearchParams({ tab: t })
@@ -221,6 +221,7 @@ export default function OrganizationDetail() {
     { key: 'departments', label: t('detail_tab_departments'), icon: <Building2 size={16} /> },
     { key: 'services', label: t('detail_tab_services'), icon: <Plug size={16} /> },
     { key: 'terminals', label: t('detail_tab_terminals'), icon: <ShoppingBag size={16} /> },
+    { key: 'store', label: t('detail_tab_store', 'Tienda'), icon: <StoreIcon size={16} /> },
     { key: 'wallet', label: t('detail_tab_wallet'), icon: <WalletIcon size={16} /> },
     ...(isAssemblyOwned ? [] : [{ key: 'assembly', label: t('detail_tab_assembly'), icon: <VoteIcon size={16} /> }]),
     { key: 'boardmeetings', label: t('detail_tab_boardmeetings'), icon: <VoteIcon size={16} /> },
@@ -812,6 +813,9 @@ export default function OrganizationDetail() {
 
       {/* Tab: Puntos de Venta (Terminales POS) */}
       {tab === 'terminals' && <OrgTerminals orgID={id!} />}
+
+      {/* Tab: Tienda de la organización */}
+      {tab === 'store' && <OrgStore orgID={id!} />}
     </div>
   )
 }
@@ -1177,6 +1181,124 @@ function OrgTerminals({ orgID }: { orgID: string }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// --- Tienda de la organización ---
+// El board gestiona los productos de la org: agregar del catálogo,
+// ajustar stock y marcar cuáles aparecen en el punto de venta (En POS).
+function OrgStore({ orgID }: { orgID: string }) {
+  const { t } = useTranslation(['organizations', 'common'])
+  const [items, setItems] = useState<any[]>([])
+  const [products, setProducts] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [newProductId, setNewProductId] = useState('')
+  const [newStock, setNewStock] = useState(1)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    load()
+    api.get('/products').then((d: any) => setProducts(Array.isArray(d) ? d : d?.products ?? [])).catch(() => {})
+  }, [orgID])
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get<any[]>(`/store/items?owner_id=${orgID}`)
+      setItems(res || [])
+    } catch (e: any) { setError(e.message) } finally { setLoading(false) }
+  }
+
+  const togglePos = async (item: any, show: boolean) => {
+    try {
+      await api.put(`/store/items/${item.id}/pos-visibility`, { show_in_pos: show })
+      setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, show_in_pos: show } : i))
+    } catch (e: any) { setError(e.message) }
+  }
+
+  const addItem = async () => {
+    if (!newProductId) return
+    setSaving(true)
+    try {
+      await api.post('/store/items', {
+        product_id: newProductId,
+        stock: newStock,
+        owner_id: orgID,
+      })
+      setNewProductId('')
+      setNewStock(1)
+      await load()
+    } catch (e: any) { setError(e.message) } finally { setSaving(false) }
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-bold mb-1 flex items-center gap-2">
+        <StoreIcon size={20} /> {t('detail_store_title', 'Tienda de la Organización')}
+      </h2>
+      <p className="text-xs text-gray-500 mb-4">
+        {t('detail_store_desc', 'Los productos de la org se venden en sus puntos de venta y en la tienda pública. Marca "En POS" los que deben aparecer en el punto.')}
+      </p>
+      {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+
+      {/* Agregar producto del catálogo a la tienda de la org */}
+      <div className="card mb-4">
+        <p className="text-sm font-semibold mb-2 flex items-center gap-2"><Package size={16} /> {t('detail_store_add', 'Agregar producto del catálogo')}</p>
+        <div className="flex gap-2 flex-wrap">
+          <select value={newProductId} onChange={(e) => setNewProductId(e.target.value)} className="input flex-1 min-w-[200px]">
+            <option value="">{t('detail_store_select_product', 'Selecciona un producto...')}</option>
+            {products.map((p: any) => (
+              <option key={p.id} value={p.id}>{p.name} {p.unit ? `(${p.unit})` : ''}</option>
+            ))}
+          </select>
+          <input
+            type="number" min={0} value={newStock}
+            onChange={(e) => setNewStock(parseInt(e.target.value) || 0)}
+            className="input w-28" placeholder={t('detail_store_stock', 'Stock')}
+          />
+          <button onClick={addItem} disabled={!newProductId || saving} className="btn-primary disabled:opacity-50">
+            {saving ? t('common:saving', 'Guardando...') : t('common:add', 'Agregar')}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-500">{t('common:loading', 'Cargando...')}</div>
+      ) : items.length === 0 ? (
+        <div className="card text-center py-8">
+          <ShoppingBag className="mx-auto mb-3 text-gray-300" size={48} />
+          <p className="text-gray-500">{t('detail_store_empty', 'La organización aún no tiene productos en su tienda.')}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {items.map((item: any) => (
+            <div key={item.id} className="card">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h3 className="font-semibold">{item.product_name}</h3>
+                  <p className="text-xs text-gray-500">{item.category || item.parent_category || '—'} · {item.item_code || ''}</p>
+                </div>
+                <span className="text-sm font-bold text-trueque-700">{item.final_price || item.price_trueque} TQ</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className={`text-sm ${item.stock === 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                  {item.is_service ? t('detail_store_service', 'Servicio') : `${t('detail_store_stock_lbl', 'Stock:')} ${item.stock}${item.stock === 0 ? ' (agotado)' : ''}`}
+                </span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer" title={t('detail_store_pos_hint', 'Mostrar en el punto de venta')}>
+                  <input
+                    type="checkbox"
+                    checked={item.show_in_pos !== false}
+                    onChange={(e) => togglePos(item, e.target.checked)}
+                  />
+                  {t('detail_store_show_in_pos', 'En POS')}
+                </label>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
