@@ -1355,9 +1355,26 @@ func isUserAuthorizedForTerminal(ctx context.Context, pool *pgxpool.Pool, termin
 		return false, err
 	}
 
-	// Sin asignar — permitir (admin asigna despues)
+	// Sin asignar — SOLO el superadmin puede iniciar sesión en un terminal
+	// registrado que aún no tiene dueño/operadores asignados. Cualquier otro
+	// usuario recibe not_authorized_for_terminal hasta que el dueño o un
+	// administrador lo asigne explícitamente.
 	if merchantUserID == nil && orgID == nil && deptID == nil {
-		return true, nil
+		var hasOperators bool
+		_ = pool.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM nfc_terminal_authorized_users WHERE terminal_id = $1)`,
+			terminalID,
+		).Scan(&hasOperators)
+		if hasOperators {
+			// Hay operadores asignados pero este usuario no es uno de ellos → denegar
+			return false, nil
+		}
+		var isSuper, enabled bool
+		err = pool.QueryRow(ctx, `
+			SELECT is_super_admin, super_admin_enabled FROM users WHERE id = $1`,
+			userID,
+		).Scan(&isSuper, &enabled)
+		return err == nil && isSuper && enabled, nil
 	}
 
 	// merchant_user_id coincide
