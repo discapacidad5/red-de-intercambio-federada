@@ -136,6 +136,10 @@ func (h *NFCTerminalHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
 	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/shift-pin", h.setShiftPin)
 	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/shift-pin/verify", h.verifyShiftPin)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/shift-pin/configured", h.getShiftPinConfigured)
+	// PIN de Ajustes del POS (distinto del PIN de turno): lo configura el dueno
+	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/admin-pin", h.setAdminPin)
+	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/admin-pin/verify", h.verifyAdminPin)
+	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/admin-pin/configured", h.getAdminPinConfigured)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/shifts", h.listMyTerminalShifts)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/transactions", h.exportMyTerminalTransactionsCSV)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/shifts", h.exportMyTerminalShiftsCSV)
@@ -2512,6 +2516,130 @@ func (h *NFCTerminalHandler) getShiftPinConfigured(w http.ResponseWriter, r *htt
 	}
 
 	configured := shiftPinHash != nil && *shiftPinHash != ""
+	writeJSON(w, 200, map[string]interface{}{
+		"configured": configured,
+	})
+}
+
+// setAdminPin allows the terminal owner to configure the SETTINGS PIN
+// (distinto del PIN de turno — protege la pantalla de Ajustes del POS)
+func (h *NFCTerminalHandler) setAdminPin(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+
+	var req struct {
+		PIN string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if len(req.PIN) < 4 || len(req.PIN) > 32 {
+		writeError(w, 400, "PIN must be between 4 and 32 characters")
+		return
+	}
+
+	var termDBID uuid.UUID
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT id FROM nfc_terminals
+		WHERE terminal_id = $1 AND merchant_user_id = $2`,
+		terminalID, userID,
+	).Scan(&termDBID)
+	if err != nil {
+		writeError(w, 404, "terminal not found or you are not the owner")
+		return
+	}
+
+	hashedPIN, err := bcrypt.GenerateFromPassword([]byte(req.PIN), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, 500, "failed to hash PIN")
+		return
+	}
+
+	_, err = h.NFC.Pool.Exec(r.Context(), `
+		UPDATE nfc_terminals SET admin_pin_hash = $1 WHERE id = $2`,
+		string(hashedPIN), termDBID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to save PIN")
+		return
+	}
+
+	writeJSON(w, 200, map[string]interface{}{
+		"status":  "configured",
+		"message": "PIN de ajustes configurado correctamente",
+	})
+}
+
+// verifyAdminPin allows the POS to verify the settings PIN
+func (h *NFCTerminalHandler) verifyAdminPin(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+
+	var req struct {
+		PIN string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	if req.PIN == "" {
+		writeError(w, 400, "pin is required")
+		return
+	}
+
+	var adminPinHash *string
+	err := h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT admin_pin_hash FROM nfc_terminals WHERE terminal_id = $1`,
+		terminalID,
+	).Scan(&adminPinHash)
+	if err != nil {
+		writeError(w, 404, "terminal not found")
+		return
+	}
+
+	if adminPinHash == nil || *adminPinHash == "" {
+		writeJSON(w, 200, map[string]interface{}{
+			"valid":      false,
+			"configured": false,
+			"message":    "el dueño del terminal no ha configurado el PIN de ajustes",
+		})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(*adminPinHash), []byte(req.PIN)); err != nil {
+		writeJSON(w, 200, map[string]interface{}{
+			"valid":      false,
+			"configured": true,
+			"message":    "PIN incorrecto",
+		})
+		return
+	}
+
+	writeJSON(w, 200, map[string]interface{}{
+		"valid":      true,
+		"configured": true,
+	})
+}
+
+// getAdminPinConfigured returns whether the terminal has a settings PIN configured
+func (h *NFCTerminalHandler) getAdminPinConfigured(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+
+	var adminPinHash *string
+	err := h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT admin_pin_hash FROM nfc_terminals WHERE terminal_id = $1`,
+		terminalID,
+	).Scan(&adminPinHash)
+	if err != nil {
+		writeError(w, 404, "terminal not found")
+		return
+	}
+
+	configured := adminPinHash != nil && *adminPinHash != ""
 	writeJSON(w, 200, map[string]interface{}{
 		"configured": configured,
 	})
