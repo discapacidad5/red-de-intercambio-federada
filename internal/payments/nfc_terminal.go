@@ -737,12 +737,16 @@ func (nt *NFCTerminals) ProcessNFCPayment(ctx context.Context, terminalID string
 	if err != nil {
 		return nil, fmt.Errorf("debiting user: %w", err)
 	}
-	if merchantUserID != nil && *merchantUserID != uuid.Nil {
-		_, _ = nt.Pool.Exec(ctx, `
-			UPDATE users SET balance = balance + $2, updated_at = NOW() WHERE id = $1`,
-			*merchantUserID, payload.Amount,
-		)
-	}
+	// El cobro cae en la cuenta provisional del punto (pos_accounts), no
+	// directo al comercio: al cerrar el turno se liquida el total a la
+	// cuenta destino del dueño. Crea la fila si aún no existe.
+	_, _ = nt.Pool.Exec(ctx, `
+		INSERT INTO pos_accounts (node_domain, terminal_id, provisional_balance, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (terminal_id)
+		DO UPDATE SET provisional_balance = pos_accounts.provisional_balance + $3, updated_at = NOW()`,
+		nt.NodeDomain, terminalID, payload.Amount,
+	)
 
 	newBalance := balance - payload.Amount
 	nt.logTransaction(ctx, termDBID, payload.CardUID, &card.UserID, payload.Amount, "approved", payload.CryptoToken, true, "single", "", "")

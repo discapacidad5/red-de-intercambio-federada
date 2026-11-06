@@ -2274,12 +2274,35 @@ func (h *NFCTerminalHandler) closeShift(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Liquidación de la cuenta provisional: todo lo acumulado por el punto
+	// durante el turno se transfiere a la cuenta destino configurada por el
+	// dueño (persona u organización). Sin destino configurado, el saldo se
+	// mantiene en pos_accounts hasta que se configure.
+	var provBalance int64
+	var destAccount *uuid.UUID
+	var settled int64
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		UPDATE pos_accounts
+		SET provisional_balance = 0, open_shift_id = NULL, updated_at = NOW()
+		WHERE terminal_id = $1 AND provisional_balance > 0
+		RETURNING provisional_balance, destination_account_id`,
+		terminalID,
+	).Scan(&provBalance, &destAccount)
+	if err == nil && destAccount != nil && provBalance > 0 {
+		_, _ = h.NFC.Pool.Exec(r.Context(), `
+			UPDATE users SET balance = balance + $2, updated_at = NOW() WHERE id = $1`,
+			*destAccount, provBalance,
+		)
+		settled = provBalance
+	}
+
 	writeJSON(w, 200, map[string]interface{}{
 		"status":             "closed",
 		"opening_amount":     openingAmount,
 		"total_sales":        totalSales,
 		"transactions_count": txCount,
 		"expected_close":     openingAmount + totalSales,
+		"settled_amount":     settled,
 	})
 }
 
