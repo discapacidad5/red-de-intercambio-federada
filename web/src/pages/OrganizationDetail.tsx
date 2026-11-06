@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { api } from '../api'
+import { api, apiFetch } from '../api'
 import { useConfig } from '../hooks/useConfig'
 import { usePermissions } from '../hooks/usePermissions'
 import { ArrowLeft, Users, Wallet as WalletIcon, Vote as VoteIcon, Settings, Crown, Plus, Trash2, ArrowUpCircle, ArrowDownCircle, FileText, Building2, Plug, Landmark, ExternalLink, ShoppingBag, UserCheck, Power, Eye, Clock } from 'lucide-react'
@@ -833,6 +833,9 @@ function OrgTerminals({ orgID }: { orgID: string }) {
   const [operators, setOperators] = useState<any[]>([])
   const [opsLoading, setOpsLoading] = useState(false)
   const [newOperatorId, setNewOperatorId] = useState('')
+  const [destValue, setDestValue] = useState('')
+  const [destSaving, setDestSaving] = useState(false)
+  const [destOk, setDestOk] = useState('')
 
   useEffect(() => {
     loadTerminals()
@@ -851,7 +854,26 @@ function OrgTerminals({ orgID }: { orgID: string }) {
   const handleOpenOperators = (term: any) => {
     setOpsTerminal(term)
     setNewOperatorId('')
+    setDestValue('')
+    setDestOk('')
     loadOperators(term.terminal_id)
+  }
+
+  // Cuenta destino del punto de la org: solo la cuenta de la org o un miembro
+  const handleSetDestination = async () => {
+    if (!opsTerminal || !destValue) return
+    setDestSaving(true)
+    try {
+      const isOrg = destValue === '__ORG__'
+      await apiFetch(`/nfc/my-terminals/${opsTerminal.terminal_id}/destination-account`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          destination_account_id: isOrg ? orgID : destValue,
+          destination_is_org: isOrg,
+        }),
+      })
+      setDestOk(t('detail_terminals_dest_saved', 'Cuenta destino configurada'))
+    } catch (e: any) { setError(e.message) } finally { setDestSaving(false) }
   }
 
   const handleAddOperator = async () => {
@@ -1099,6 +1121,29 @@ function OrgTerminals({ orgID }: { orgID: string }) {
           <p className="text-xs text-gray-500 mb-3">
             {t('detail_terminals_operators_desc', 'Estas personas pueden iniciar sesión y operar este punto de venta (además del operador principal y los miembros del board).')}
           </p>
+
+          {/* Cuenta destino del punto: solo org o sus miembros */}
+          <div className="border rounded-lg p-3 mb-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">
+              💰 {t('detail_terminals_dest_title', 'Cuenta destino de la liquidación')}
+            </p>
+            <div className="flex gap-2">
+              <select value={destValue} onChange={(e) => setDestValue(e.target.value)} className="input flex-1">
+                <option value="">{t('detail_terminals_dest_select', 'Selecciona destino...')}</option>
+                <option value="__ORG__">🏛️ {t('detail_terminals_dest_org', 'Cuenta de la organización')}</option>
+                {members.map((m: any) => (
+                  <option key={m.id || m.user_id} value={m.id || m.user_id}>
+                    👤 {m.display_name || m.username} (@{m.username})
+                  </option>
+                ))}
+              </select>
+              <button onClick={handleSetDestination} disabled={!destValue || destSaving} className="btn-primary disabled:opacity-50">
+                {destSaving ? t('common:saving', 'Guardando...') : t('common:save', 'Guardar')}
+              </button>
+            </div>
+            {destOk && <p className="text-xs text-green-600 mt-2">✓ {destOk}</p>}
+          </div>
+
           <div className="flex gap-2 mb-3">
             <select value={newOperatorId} onChange={(e) => setNewOperatorId(e.target.value)} className="input flex-1">
               <option value="">{t('detail_terminals_select_member', 'Selecciona un miembro...')}</option>
