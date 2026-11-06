@@ -2295,6 +2295,22 @@ func (h *NFCTerminalHandler) closeShift(w http.ResponseWriter, r *http.Request) 
 		RETURNING provisional_balance, destination_account_id`,
 		terminalID,
 	).Scan(&provBalance, &destAccount)
+	// Punto personal sin destino configurado: liquida automáticamente
+	// a la cuenta del dueño del punto (la regla anti-fraude lo obliga).
+	if destAccount == nil && provBalance > 0 {
+		var ownerID *uuid.UUID
+		var orgOwner *uuid.UUID
+		_ = h.NFC.Pool.QueryRow(r.Context(), `
+			SELECT merchant_user_id, organization_id
+			FROM nfc_terminals WHERE terminal_id = $1`,
+			terminalID,
+		).Scan(&ownerID, &orgOwner)
+		if ownerID != nil {
+			destAccount = ownerID
+		} else if orgOwner != nil {
+			destAccount = orgOwner
+		}
+	}
 	if err == nil && destAccount != nil && provBalance > 0 {
 		_, _ = h.NFC.Pool.Exec(r.Context(), `
 			UPDATE users SET balance = balance + $2, updated_at = NOW() WHERE id = $1`,
@@ -2692,6 +2708,56 @@ func (h *NFCTerminalHandler) setDestinationAccount(w http.ResponseWriter, r *htt
 	if !h.verifyMyTerminalOwnership(r, terminalID, userID) {
 		writeError(w, 404, "terminal not found or you are not the owner")
 		return
+	}
+
+	// Regla anti-fraude por tipo de punto:
+	//  - Punto personal → la cuenta destino es SIEMPRE la del dueño (no cambiable)
+	//  - Punto de organización → la cuenta de la org o un miembro de ella/depto
+	//  - Punto de departamento → solo miembros de ese departamento
+	var merchantID, orgID, deptID *uuid.UUID
+	err = h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT merchant_user_id, organization_id, department_id
+		FROM nfc_terminals WHERE terminal_id = $1`,
+		terminalID,
+	).Scan(&merchantID, &orgID, &deptID)
+	if err != nil {
+		writeError(w, 404, "terminal not found")
+		return
+	}
+
+	if orgID == nil && deptID == nil {
+		// Punto personal: el dueño es el único destino válido
+		if merchantID == nil || destID != *merchantID || req.IsOrg {
+			writeError(w, 400, "un punto personal solo puede liquidar a la cuenta de su dueño")
+			return
+		}
+	} else if req.IsOrg {
+		// Punto de org: destino org válido solo si es LA org dueña del punto
+		if orgID == nil || destID != *orgID {
+			writeError(w, 400, "la cuenta de organización destino debe ser la organización dueña del punto")
+			return
+		}
+	} else {
+		// Destino = persona: debe ser miembro de la org/dept dueña del punto
+		var ok bool
+		err = h.NFC.Pool.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM organization_board_members
+				WHERE user_id = $1 AND organization_id = $2 AND COALESCE(is_active, true) = true
+			) OR EXISTS(
+				SELECT 1 FROM department_members dm
+				WHERE dm.user_id = $1 AND (dm.department_id = $3)
+			) OR EXISTS(
+				SELECT 1 FROM department_members dm
+				JOIN departments d ON d.id = dm.department_id
+				WHERE dm.user_id = $1 AND d.parent_organization_id = $2
+			)`,
+			destID, orgID, deptID,
+		).Scan(&ok)
+		if err != nil || !ok {
+			writeError(w, 400, "el destino debe ser un miembro de la organización o departamento dueño del punto")
+			return
+		}
 	}
 
 	// Upsert: crea la cuenta provisional del punto si aún no existe
@@ -3283,12 +3349,19 @@ func (h *NFCTerminalHandler) listMyTerminals(w http.ResponseWriter, r *http.Requ
 	// - merchant_user_id (persona individual)
 	// - organization_id (organizacion, si el usuario logueado es una organizacion)
 	rows, err := h.NFC.Pool.Query(r.Context(), `
-		SELECT id, node_domain, terminal_id, label, terminal_type, location,
-		       is_active, is_registered, last_seen, firmware_version, created_at, updated_at,
-		       block_code_hash IS NOT NULL as is_blocked
-		FROM nfc_terminals
-		WHERE merchant_user_id = $1 OR organization_id = $1
-		ORDER BY created_at DESC`,
+		SELECT t.id, t.node_domain, t.terminal_id, t.label, t.terminal_type, t.location,
+		       t.is_active, t.is_registered, t.last_seen, t.firmware_version, t.created_at, t.updated_at,
+		       t.block_code_hash IS NOT NULL as is_blocked,
+		       t.merchant_user_id, t.organization_id, t.department_id,
+		       COALESCE(u.display_name, u.username, '') AS owner_name,
+		       COALESCE(o.display_name, o.username, '') AS org_name,
+		       COALESCE(d.name, '') AS dept_name
+		FROM nfc_terminals t
+		LEFT JOIN users u ON u.id = t.merchant_user_id
+		LEFT JOIN users o ON o.id = t.organization_id
+		LEFT JOIN departments d ON d.id = t.department_id
+		WHERE t.merchant_user_id = $1 OR t.organization_id = $1
+		ORDER BY t.created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -3311,6 +3384,12 @@ func (h *NFCTerminalHandler) listMyTerminals(w http.ResponseWriter, r *http.Requ
 		FirmwareVersion *string    `json:"firmware_version"`
 		CreatedAt       time.Time  `json:"created_at"`
 		UpdatedAt       time.Time  `json:"updated_at"`
+		MerchantUserID  *uuid.UUID `json:"merchant_user_id"`
+		OrganizationID  *uuid.UUID `json:"organization_id"`
+		DepartmentID    *uuid.UUID `json:"department_id"`
+		OwnerName       string     `json:"owner_name"`
+		OrgName         string     `json:"organization_name"`
+		DeptName        string     `json:"department_name"`
 	}
 
 	var terminals []MyTerminal
@@ -3318,7 +3397,9 @@ func (h *NFCTerminalHandler) listMyTerminals(w http.ResponseWriter, r *http.Requ
 		var t MyTerminal
 		if err := rows.Scan(&t.ID, &t.NodeDomain, &t.TerminalID, &t.Label, &t.TerminalType,
 			&t.Location, &t.IsActive, &t.IsRegistered, &t.LastSeen,
-			&t.FirmwareVersion, &t.CreatedAt, &t.UpdatedAt, &t.IsBlocked); err != nil {
+			&t.FirmwareVersion, &t.CreatedAt, &t.UpdatedAt, &t.IsBlocked,
+			&t.MerchantUserID, &t.OrganizationID, &t.DepartmentID,
+			&t.OwnerName, &t.OrgName, &t.DeptName); err != nil {
 			continue
 		}
 		terminals = append(terminals, t)

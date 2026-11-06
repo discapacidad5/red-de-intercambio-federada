@@ -16,6 +16,12 @@ interface MyTerminal {
   is_blocked: boolean
   last_seen: string | null
   created_at: string
+  merchant_user_id?: string | null
+  organization_id?: string | null
+  department_id?: string | null
+  owner_name?: string
+  organization_name?: string
+  department_name?: string
 }
 
 interface Transaction {
@@ -55,6 +61,7 @@ export default function MyTerminals() {
   const [destIsOrg, setDestIsOrg] = useState(false)
   const [destSaving, setDestSaving] = useState(false)
   const [destOk, setDestOk] = useState('')
+  const [destMembers, setDestMembers] = useState<any[]>([])
   const [operators, setOperators] = useState<any[]>([])
   const [opsLoading, setOpsLoading] = useState(false)
   const [newOperator, setNewOperator] = useState('')
@@ -257,9 +264,19 @@ export default function MyTerminals() {
   const openSettings = (term: MyTerminal) => {
     setSettingsModal(term)
     setAdminPinValue(''); setAdminPinOk('')
-    setDestAccount(''); setDestIsOrg(false); setDestOk('')
+    setDestAccount(''); setDestIsOrg(false); setDestOk(''); setDestMembers([])
     setNewOperator(''); setOperators([])
     loadOperators(term.terminal_id)
+    // Punto de org/dept: cargar miembros elegibles como cuenta destino
+    if (term.organization_id) {
+      api.get<any[]>(`/organizations/${term.organization_id}/members`)
+        .then((m) => setDestMembers(m || []))
+        .catch(() => setDestMembers([]))
+    } else if (term.department_id) {
+      api.get<any[]>(`/departments/${term.department_id}/members`)
+        .then((m) => setDestMembers(m || []))
+        .catch(() => setDestMembers([]))
+    }
   }
 
   const loadOperators = async (terminalId: string) => {
@@ -1004,28 +1021,50 @@ export default function MyTerminals() {
                 <Wallet size={16} className="text-green-600" />
                 {t('dest_account_title', 'Cuenta Destino')}
               </h3>
-              <p className="text-xs text-gray-500 mb-3">
-                {t('dest_account_desc', 'A donde se liquida el acumulado del punto al cerrar el turno (ID de usuario o cuenta de organización).')}
-              </p>
-              <input
-                type="text"
-                value={destAccount}
-                onChange={(e) => setDestAccount(e.target.value)}
-                placeholder={t('dest_placeholder', 'ID de cuenta (uuid de usuario u organización)')}
-                className="input w-full mb-2 font-mono text-xs"
-              />
-              <label className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                <input type="checkbox" checked={destIsOrg} onChange={(e) => setDestIsOrg(e.target.checked)} />
-                {t('dest_is_org', 'Es cuenta de organización')}
-              </label>
-              <button
-                onClick={handleSetDestination}
-                disabled={!destAccount.trim() || destSaving}
-                className="btn-primary w-full disabled:opacity-50"
-              >
-                {destSaving ? t('saving', t('common:loading')) : t('save_dest', 'Guardar cuenta destino')}
-              </button>
-              {destOk && <p className="text-xs text-green-600 mt-2">✓ {destOk}</p>}
+              {!settingsModal.organization_id && !settingsModal.department_id ? (
+                <p className="text-xs text-gray-500">
+                  {t('dest_auto_personal', 'Punto personal: al cerrar turno, lo acumulado se transfiere automáticamente a tu cuenta. No es editable.')}
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {t('dest_account_desc_org', 'A donde se liquida el acumulado al cerrar turno. Solo puedes elegir la cuenta de la organización o un miembro autorizado de ella.')}
+                  </p>
+                  <select
+                    value={destIsOrg ? '__ORG__' : destAccount}
+                    onChange={(e) => {
+                      if (e.target.value === '__ORG__') {
+                        setDestIsOrg(true)
+                        setDestAccount(settingsModal.organization_id || '')
+                      } else {
+                        setDestIsOrg(false)
+                        setDestAccount(e.target.value)
+                      }
+                    }}
+                    className="input w-full mb-3"
+                  >
+                    <option value="">{t('dest_select', 'Selecciona cuenta destino...')}</option>
+                    {settingsModal.organization_id && (
+                      <option value="__ORG__">
+                        🏛️ {t('dest_org_account', 'Cuenta de la organización')} ({settingsModal.organization_name})
+                      </option>
+                    )}
+                    {destMembers.map((m: any) => (
+                      <option key={m.id || m.user_id} value={m.id || m.user_id}>
+                        👤 {m.display_name || m.username} (@{m.username})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleSetDestination}
+                    disabled={!destAccount.trim() || destSaving}
+                    className="btn-primary w-full disabled:opacity-50"
+                  >
+                    {destSaving ? t('saving', t('common:loading')) : t('save_dest', 'Guardar cuenta destino')}
+                  </button>
+                  {destOk && <p className="text-xs text-green-600 mt-2">✓ {destOk}</p>}
+                </>
+              )}
             </div>
 
             {/* Operadores autorizados */}
