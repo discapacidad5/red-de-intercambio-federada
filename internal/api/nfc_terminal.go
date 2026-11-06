@@ -51,6 +51,7 @@ func (h *NFCTerminalHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
 	r.Post("/api/nfc/terminal/classic/pre-auth-document", h.classicPreAuthWithDocument)
 	r.Post("/api/nfc/terminal/classic/confirm", h.classicConfirm)
 	r.Post("/api/nfc/terminal/user-lookup", h.userLookup)
+	r.Post("/api/nfc/terminal/card-lookup", h.cardLookup)
 
 	// NTAG215 dynamic certificates (terminal-facing, Ed25519 auth)
 	r.Post("/api/nfc/terminal/ntag215/pre-auth", h.ntag215PreAuth)
@@ -4549,18 +4550,76 @@ func (h *NFCTerminalHandler) userLookup(w http.ResponseWriter, r *http.Request) 
 	var payload struct {
 		TerminalID string `json:"terminal_id"`
 		Username   string `json:"username"`
+		DocType    string `json:"doc_type"`
+		DocNumber  string `json:"doc_number"`
 	}
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		writeError(w, 400, "invalid payload format")
 		return
 	}
 
+	// Lookup por documento: resolver doc_type+doc_number → username
+	// (user_documents es local del nodo)
+	if payload.Username == "" && payload.DocNumber != "" {
+		_ = h.NFC.Pool.QueryRow(r.Context(), `
+			SELECT u.username FROM user_documents d
+			JOIN users u ON u.id = d.user_id
+			WHERE UPPER(d.document_type_code) = UPPER($1)
+			  AND UPPER(d.document_number) = UPPER($2)
+			  AND u.node_domain = $3
+			LIMIT 1`, payload.DocType, payload.DocNumber, h.NFC.NodeDomain,
+		).Scan(&payload.Username)
+	}
+
 	if payload.Username == "" {
-		writeError(w, 400, "username is required")
+		writeError(w, 400, "username or document required")
 		return
 	}
 
 	resp, err := h.NFC.UserLookup(r.Context(), payload.TerminalID, payload.Username)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+
+	respBytes, _ := json.Marshal(resp)
+	encResp, err := h.NFC.EncodeResponseWithSharedKey(r.Context(), payload.TerminalID, respBytes, sharedKey)
+	if err != nil {
+		writeError(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, encResp)
+}
+
+// cardLookup identifica al cliente por el UID de su tarjeta NFC — el
+// modelo bancario: la tarjeta dice quién es, documento+PIN verifican.
+func (h *NFCTerminalHandler) cardLookup(w http.ResponseWriter, r *http.Request) {
+	var req ProcessPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	plaintext, sharedKey, err := h.NFC.DecodePayload(r.Context(), req.TerminalID, req.EncryptedPayload)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+
+	var payload struct {
+		TerminalID string `json:"terminal_id"`
+		CardUID    string `json:"card_uid"`
+	}
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		writeError(w, 400, "invalid payload format")
+		return
+	}
+	if payload.CardUID == "" {
+		writeError(w, 400, "card_uid is required")
+		return
+	}
+
+	resp, err := h.NFC.CardLookup(r.Context(), payload.TerminalID, payload.CardUID)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return

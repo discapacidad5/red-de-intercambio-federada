@@ -1538,6 +1538,70 @@ func (nt *NFCTerminals) localUserLookup(ctx context.Context, username string) (*
 	return resp, nil
 }
 
+// CardLookup identifica al cliente POR LA TARJETA (card_uid) — el modelo
+// bancario: acercar la tarjeta dice QUIÉN es; documento+PIN verifican.
+func (nt *NFCTerminals) CardLookup(ctx context.Context, terminalID, cardUID string) (*UserLookupResponse, error) {
+	var userID, displayName, cardType string
+	var hasDynamicCerts bool
+	var requiredDocType *string
+	err := nt.Pool.QueryRow(ctx, `
+		SELECT c.user_id::text, COALESCE(NULLIF(u.display_name,''), u.username, ''),
+		       COALESCE(c.card_type,''), COALESCE(c.has_dynamic_certs, false), c.required_doc_type
+		FROM nfc_cards c
+		JOIN users u ON u.id = c.user_id
+		WHERE c.card_uid = $1 AND c.is_active = true AND u.node_domain = $2
+		ORDER BY c.has_dynamic_certs DESC, c.issued_at DESC LIMIT 1`,
+		cardUID, nt.NodeDomain,
+	).Scan(&userID, &displayName, &cardType, &hasDynamicCerts, &requiredDocType)
+	if err != nil {
+		return &UserLookupResponse{Found: false, Message: "tarjeta no reconocida o inactiva"}, nil
+	}
+
+	respType := cardType
+	if respType == "" {
+		respType = "uid_only"
+	}
+	requiresDoc := hasDynamicCerts || respType == "classic"
+
+	var docTypes []string
+	rows, err := nt.Pool.Query(ctx,
+		`SELECT document_type_code FROM user_documents WHERE user_id = $1::uuid ORDER BY document_type_code`,
+		userID,
+	)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var dt string
+			if err := rows.Scan(&dt); err == nil {
+				docTypes = append(docTypes, dt)
+			}
+		}
+	}
+	if len(docTypes) == 0 {
+		var nationalID string
+		err = nt.Pool.QueryRow(ctx,
+			`SELECT COALESCE(national_id, '') FROM users WHERE id = $1::uuid`,
+			userID,
+		).Scan(&nationalID)
+		if err == nil && nationalID != "" {
+			docTypes = append(docTypes, "cedula")
+		}
+	}
+
+	resp := &UserLookupResponse{
+		Found:            true,
+		UserID:           userID,
+		CardType:         respType,
+		RequiresDocument: requiresDoc,
+		DocumentTypes:    docTypes,
+		DisplayName:      displayName,
+	}
+	if requiredDocType != nil && *requiredDocType != "" {
+		resp.RequiredDocType = *requiredDocType
+	}
+	return resp, nil
+}
+
 func (nt *NFCTerminals) remoteUserLookup(ctx context.Context, username, remoteNode string) (*UserLookupResponse, error) {
 	// TODO: consultar al nodo remoto via federation (mTLS)
 	// Por ahora retornar error — se implementa en federation/server.go
