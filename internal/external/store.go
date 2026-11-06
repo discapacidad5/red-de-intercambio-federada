@@ -42,6 +42,7 @@ type StoreItem struct {
 	Stock              int64      `json:"stock"`
 	IsService          bool       `json:"is_service"`
 	IsUniversalService bool       `json:"is_universal_service,omitempty"`
+	ShowInPos          bool       `json:"show_in_pos"`
 	IsActive           bool       `json:"is_active"`
 	ExternalOpID       *uuid.UUID `json:"external_op_id"`
 	ImageURL           string     `json:"image_url"`
@@ -119,7 +120,7 @@ func (s *Store) AddItem(ctx context.Context, p AddStoreItemParams) (*StoreItem, 
 func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, error) {
 	query := `SELECT si.id, si.node_domain, si.owner_id, si.product_id, COALESCE(si.item_code, ''), si.product_name, si.description, si.parent_category, si.category, si.subcategory, si.origin,
 			  si.unit, si.quantity_per_unit, si.price_trueque, si.base_price, si.extra_costs, si.final_price, si.extra_description,
-			  si.stock, COALESCE(si.is_service, false), si.is_active, si.external_op_id, si.created_at, si.updated_at,
+			  si.stock, COALESCE(si.is_service, false), COALESCE(si.show_in_pos, true), si.is_active, si.external_op_id, si.created_at, si.updated_at,
 			  COALESCE(u.username, '') as owner_name,
 			  COALESCE(p.image_url, '') as image_url,
 			  COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, '')) as image_icon_url
@@ -147,7 +148,7 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 		err := rows.Scan(&item.ID, &item.NodeDomain, &item.OwnerID, &item.ProductID, &item.ItemCode, &item.ProductName, &item.Description,
 			&item.ParentCategory, &item.Category, &item.Subcategory, &item.Origin, &item.Unit, &item.QuantityPerUnit, &item.PriceTrueque,
 			&item.BasePrice, &item.ExtraCosts, &item.FinalPrice, &item.ExtraDescription,
-			&item.Stock, &item.IsService, &item.IsActive, &item.ExternalOpID, &item.CreatedAt, &item.UpdatedAt, &item.OwnerName, &item.ImageURL, &item.ImageIconURL)
+			&item.Stock, &item.IsService, &item.ShowInPos, &item.IsActive, &item.ExternalOpID, &item.CreatedAt, &item.UpdatedAt, &item.OwnerName, &item.ImageURL, &item.ImageIconURL)
 		if err != nil {
 			return nil, fmt.Errorf("scanning store item: %w", err)
 		}

@@ -142,6 +142,11 @@ func (h *NFCTerminalHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/admin-pin/configured", h.getAdminPinConfigured)
 	// Cuenta destino de la liquidación del punto (persona u organización)
 	r.With(am.RequireAuth).Put("/api/nfc/my-terminals/{id}/destination-account", h.setDestinationAccount)
+	// Operadores autorizados del punto personal: el dueño decide quién puede
+	// iniciar sesión en su terminal (además de él mismo)
+	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/authorized-users", h.listMyAuthorizedUsers)
+	r.With(am.RequireAuth).Post("/api/nfc/my-terminals/{id}/authorized-users", h.addMyAuthorizedUser)
+	r.With(am.RequireAuth).Delete("/api/nfc/my-terminals/{id}/authorized-users/{userID}", h.removeMyAuthorizedUser)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/shifts", h.listMyTerminalShifts)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/transactions", h.exportMyTerminalTransactionsCSV)
 	r.With(am.RequireAuth).Get("/api/nfc/my-terminals/{id}/export/shifts", h.exportMyTerminalShiftsCSV)
@@ -2723,6 +2728,153 @@ func (h *NFCTerminalHandler) setDestinationAccount(w http.ResponseWriter, r *htt
 	writeJSON(w, 200, map[string]interface{}{
 		"status": "configured",
 	})
+}
+
+// --- My terminals: operadores autorizados (solo el dueño) ---
+
+// verifyMyTerminalOwnership devuelve true si el usuario autenticado es el
+// dueño (merchant_user_id) del terminal.
+func (h *NFCTerminalHandler) verifyMyTerminalOwnership(r *http.Request, terminalID string, userID uuid.UUID) bool {
+	var count int
+	err := h.NFC.Pool.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM nfc_terminals
+		WHERE terminal_id = $1 AND merchant_user_id = $2`,
+		terminalID, userID,
+	).Scan(&count)
+	return err == nil && count > 0
+}
+
+func (h *NFCTerminalHandler) listMyAuthorizedUsers(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+	if !h.verifyMyTerminalOwnership(r, terminalID, userID) {
+		writeError(w, 404, "terminal not found or you are not the owner")
+		return
+	}
+
+	rows, err := h.NFC.Pool.Query(r.Context(), `
+		SELECT au.user_id, u.username, COALESCE(u.display_name, u.username), au.assigned_at
+		FROM nfc_terminal_authorized_users au
+		JOIN users u ON u.id = au.user_id
+		WHERE au.terminal_id = $1
+		ORDER BY au.assigned_at DESC`,
+		terminalID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to list authorized users")
+		return
+	}
+	defer rows.Close()
+
+	users := []map[string]interface{}{}
+	for rows.Next() {
+		var uid uuid.UUID
+		var username, displayName string
+		var assignedAt time.Time
+		if err := rows.Scan(&uid, &username, &displayName, &assignedAt); err != nil {
+			continue
+		}
+		users = append(users, map[string]interface{}{
+			"user_id":      uid.String(),
+			"username":     username,
+			"display_name": displayName,
+			"assigned_at":  assignedAt,
+		})
+	}
+	writeJSON(w, 200, users)
+}
+
+// addMyAuthorizedUser asigna un operador al punto personal del dueño.
+// Acepta {"username": "..."} (o {"user_id": "..."}) — el dueño busca por
+// nombre de usuario en el mismo nodo.
+func (h *NFCTerminalHandler) addMyAuthorizedUser(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+	ownerID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+	if !h.verifyMyTerminalOwnership(r, terminalID, ownerID) {
+		writeError(w, 404, "terminal not found or you are not the owner")
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		UserID   string `json:"user_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+
+	var targetID uuid.UUID
+	if req.UserID != "" {
+		targetID, err = uuid.Parse(req.UserID)
+		if err != nil {
+			writeError(w, 400, "invalid user_id")
+			return
+		}
+	} else if req.Username != "" {
+		err = h.NFC.Pool.QueryRow(r.Context(), `
+			SELECT id FROM users
+			WHERE LOWER(username) = LOWER($1) AND node_domain = $2`,
+			strings.TrimSpace(req.Username), h.NodeDomain,
+		).Scan(&targetID)
+		if err != nil {
+			writeError(w, 404, "user not found in this node")
+			return
+		}
+	} else {
+		writeError(w, 400, "username or user_id is required")
+		return
+	}
+
+	_, err = h.NFC.Pool.Exec(r.Context(), `
+		INSERT INTO nfc_terminal_authorized_users (terminal_id, user_id, assigned_by)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (terminal_id, user_id) DO NOTHING`,
+		terminalID, targetID, ownerID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to add authorized user")
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "added"})
+}
+
+func (h *NFCTerminalHandler) removeMyAuthorizedUser(w http.ResponseWriter, r *http.Request) {
+	terminalID := chi.URLParam(r, "id")
+	userIDParam := chi.URLParam(r, "userID")
+	ownerID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+	if !h.verifyMyTerminalOwnership(r, terminalID, ownerID) {
+		writeError(w, 404, "terminal not found or you are not the owner")
+		return
+	}
+	targetID, err := uuid.Parse(userIDParam)
+	if err != nil {
+		writeError(w, 400, "invalid user id")
+		return
+	}
+
+	_, err = h.NFC.Pool.Exec(r.Context(), `
+		DELETE FROM nfc_terminal_authorized_users
+		WHERE terminal_id = $1 AND user_id = $2`,
+		terminalID, targetID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to remove authorized user")
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "removed"})
 }
 
 // listMyTerminalShifts lists shifts for a terminal owned by the authenticated user.

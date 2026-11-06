@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, apiFetch } from '../api'
 import { usePermissions } from '../hooks/usePermissions'
-import { Smartphone, Lock, Unlock, Eye, Activity, Power, ShoppingBag, Edit2, Globe, Clock, XCircle, CheckCircle, KeyRound, History, Download } from 'lucide-react'
+import { Smartphone, Lock, Unlock, Eye, Activity, Power, ShoppingBag, Edit2, Globe, Clock, XCircle, CheckCircle, KeyRound, History, Download, Settings, Users, UserPlus, Trash2, Wallet } from 'lucide-react'
 import { fmtTQ, fmtDateTime } from '../lib/format'
 
 interface MyTerminal {
@@ -45,6 +45,20 @@ export default function MyTerminals() {
   const [shiftPinModal, setShiftPinModal] = useState<MyTerminal | null>(null)
   const [shiftPinValue, setShiftPinValue] = useState('')
   const [shiftPinSaving, setShiftPinSaving] = useState(false)
+
+  // POS settings modal state (admin PIN + cuenta destino + operadores)
+  const [settingsModal, setSettingsModal] = useState<MyTerminal | null>(null)
+  const [adminPinValue, setAdminPinValue] = useState('')
+  const [adminPinSaving, setAdminPinSaving] = useState(false)
+  const [adminPinOk, setAdminPinOk] = useState('')
+  const [destAccount, setDestAccount] = useState('')
+  const [destIsOrg, setDestIsOrg] = useState(false)
+  const [destSaving, setDestSaving] = useState(false)
+  const [destOk, setDestOk] = useState('')
+  const [operators, setOperators] = useState<any[]>([])
+  const [opsLoading, setOpsLoading] = useState(false)
+  const [newOperator, setNewOperator] = useState('')
+  const [opSaving, setOpSaving] = useState(false)
 
   // Shift history state
   const [shiftHistoryModal, setShiftHistoryModal] = useState<MyTerminal | null>(null)
@@ -236,6 +250,92 @@ export default function MyTerminals() {
       setError(err instanceof Error ? err.message : t('error_set_pin', 'Error al configurar PIN'))
     } finally {
       setShiftPinSaving(false)
+    }
+  }
+
+  // POS settings: admin PIN, cuenta destino, operadores autorizados
+  const openSettings = (term: MyTerminal) => {
+    setSettingsModal(term)
+    setAdminPinValue(''); setAdminPinOk('')
+    setDestAccount(''); setDestIsOrg(false); setDestOk('')
+    setNewOperator(''); setOperators([])
+    loadOperators(term.terminal_id)
+  }
+
+  const loadOperators = async (terminalId: string) => {
+    setOpsLoading(true)
+    try {
+      const res = await api.get<any[]>(`/nfc/my-terminals/${terminalId}/authorized-users`)
+      setOperators(res || [])
+    } catch (err) {
+      setOperators([])
+    } finally {
+      setOpsLoading(false)
+    }
+  }
+
+  const handleSetAdminPin = async () => {
+    if (!settingsModal || adminPinValue.length < 4) return
+    setAdminPinSaving(true)
+    try {
+      await apiFetch(`/nfc/my-terminals/${settingsModal.terminal_id}/admin-pin`, {
+        method: 'POST',
+        body: JSON.stringify({ pin: adminPinValue }),
+      })
+      setAdminPinValue('')
+      setAdminPinOk(t('admin_pin_saved', 'PIN de ajustes guardado'))
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error_set_pin', 'Error al configurar PIN'))
+    } finally {
+      setAdminPinSaving(false)
+    }
+  }
+
+  const handleSetDestination = async () => {
+    if (!settingsModal || !destAccount.trim()) return
+    setDestSaving(true)
+    try {
+      await apiFetch(`/nfc/my-terminals/${settingsModal.terminal_id}/destination-account`, {
+        method: 'PUT',
+        body: JSON.stringify({ destination_account_id: destAccount.trim(), destination_is_org: destIsOrg }),
+      })
+      setDestOk(t('dest_saved', 'Cuenta destino configurada'))
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error_dest', 'Error al configurar cuenta destino'))
+    } finally {
+      setDestSaving(false)
+    }
+  }
+
+  const handleAddOperator = async () => {
+    if (!settingsModal || !newOperator.trim()) return
+    setOpSaving(true)
+    try {
+      await apiFetch(`/nfc/my-terminals/${settingsModal.terminal_id}/authorized-users`, {
+        method: 'POST',
+        body: JSON.stringify({ username: newOperator.trim() }),
+      })
+      setNewOperator('')
+      await loadOperators(settingsModal.terminal_id)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error_add_operator', 'Error al agregar operador'))
+    } finally {
+      setOpSaving(false)
+    }
+  }
+
+  const handleRemoveOperator = async (userId: string) => {
+    if (!settingsModal) return
+    try {
+      await apiFetch(`/nfc/my-terminals/${settingsModal.terminal_id}/authorized-users/${userId}`, {
+        method: 'DELETE',
+      })
+      await loadOperators(settingsModal.terminal_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error_remove_operator', 'Error al quitar operador'))
     }
   }
 
@@ -461,6 +561,13 @@ export default function MyTerminals() {
                 >
                   <KeyRound size={16} />
                   {t('shift_pin', 'PIN Turno')}
+                </button>
+                <button
+                  onClick={() => openSettings(term)}
+                  className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-100 flex items-center justify-center gap-1"
+                >
+                  <Settings size={16} />
+                  {t('pos_settings', 'Punto')}
                 </button>
                 <button
                   onClick={() => { setRenaming(term); setRenameLabel(term.label || '') }}
@@ -841,6 +948,137 @@ export default function MyTerminals() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de configuracion del Punto: PIN de ajustes, cuenta destino, operadores */}
+      {settingsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <Settings size={20} />
+                {t('pos_settings_title', 'Configuración del Punto')}
+              </h2>
+              <button
+                onClick={() => setSettingsModal(null)}
+                className="px-3 py-1 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm"
+              >
+                {t('close', t('common:close'))}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 font-mono mb-4">{settingsModal.label} · {settingsModal.terminal_id.slice(0, 24)}...</p>
+
+            {/* PIN de Ajustes */}
+            <div className="border rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
+                <KeyRound size={16} className="text-indigo-500" />
+                {t('admin_pin_title', 'PIN de Ajustes')}
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                {t('admin_pin_desc', 'Protege la pantalla de Ajustes del POS. Distinto del PIN de turno.')}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={adminPinValue}
+                  onChange={(e) => setAdminPinValue(e.target.value)}
+                  placeholder={t('pin_placeholder', 'PIN (minimo 4 digitos)')}
+                  className="input flex-1"
+                />
+                <button
+                  onClick={handleSetAdminPin}
+                  disabled={adminPinValue.length < 4 || adminPinSaving}
+                  className="btn-primary disabled:opacity-50"
+                >
+                  {adminPinSaving ? t('saving', t('common:loading')) : t('save', t('common:save'))}
+                </button>
+              </div>
+              {adminPinOk && <p className="text-xs text-green-600 mt-2">✓ {adminPinOk}</p>}
+            </div>
+
+            {/* Cuenta destino */}
+            <div className="border rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
+                <Wallet size={16} className="text-green-600" />
+                {t('dest_account_title', 'Cuenta Destino')}
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                {t('dest_account_desc', 'A donde se liquida el acumulado del punto al cerrar el turno (ID de usuario o cuenta de organización).')}
+              </p>
+              <input
+                type="text"
+                value={destAccount}
+                onChange={(e) => setDestAccount(e.target.value)}
+                placeholder={t('dest_placeholder', 'ID de cuenta (uuid de usuario u organización)')}
+                className="input w-full mb-2 font-mono text-xs"
+              />
+              <label className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                <input type="checkbox" checked={destIsOrg} onChange={(e) => setDestIsOrg(e.target.checked)} />
+                {t('dest_is_org', 'Es cuenta de organización')}
+              </label>
+              <button
+                onClick={handleSetDestination}
+                disabled={!destAccount.trim() || destSaving}
+                className="btn-primary w-full disabled:opacity-50"
+              >
+                {destSaving ? t('saving', t('common:loading')) : t('save_dest', 'Guardar cuenta destino')}
+              </button>
+              {destOk && <p className="text-xs text-green-600 mt-2">✓ {destOk}</p>}
+            </div>
+
+            {/* Operadores autorizados */}
+            <div className="border rounded-lg p-4">
+              <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
+                <Users size={16} className="text-blue-500" />
+                {t('operators_title', 'Operadores Autorizados')}
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                {t('operators_desc', 'Personas que pueden iniciar sesión en este punto (además de ti como dueño).')}
+              </p>
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newOperator}
+                  onChange={(e) => setNewOperator(e.target.value)}
+                  placeholder={t('operator_username', 'Nombre de usuario')}
+                  className="input flex-1"
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddOperator() }}
+                />
+                <button
+                  onClick={handleAddOperator}
+                  disabled={!newOperator.trim() || opSaving}
+                  className="btn-primary disabled:opacity-50 flex items-center gap-1"
+                >
+                  <UserPlus size={16} />
+                  {t('add', 'Agregar')}
+                </button>
+              </div>
+              {opsLoading ? (
+                <p className="text-xs text-gray-400">{t('loading', t('common:loading'))}</p>
+              ) : operators.length === 0 ? (
+                <p className="text-xs text-gray-400">{t('no_operators', 'Sin operadores asignados — solo tú puedes usar el punto.')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {operators.map((op) => (
+                    <div key={op.user_id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                      <div>
+                        <span className="text-sm font-medium">{op.display_name || op.username}</span>
+                        <span className="text-xs text-gray-400 ml-2">@{op.username}</span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveOperator(op.user_id)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                        title={t('remove', 'Quitar')}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

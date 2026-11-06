@@ -413,6 +413,16 @@ export default function Store() {
     }
   }
 
+  // Marca si el item aparece en el catalogo del punto de venta
+  const togglePosVisibility = async (itemId: string, show: boolean) => {
+    try {
+      await api.put(`/store/items/${itemId}/pos-visibility`, { show_in_pos: show })
+      setItems(prev => prev.map((i: any) => i.id === itemId ? { ...i, show_in_pos: show } : i))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error')
+    }
+  }
+
   const buy = async (item: any) => {
     const qty = prompt(`Cuantas unidades de ${item.product_name || 'este producto'} quieres comprar?`)
     if (!qty) return
@@ -1000,6 +1010,16 @@ export default function Store() {
                       <button onClick={() => openTagModal(item)} className="btn-secondary flex-1 flex items-center justify-center gap-1.5 text-xs">
                         <QrCode size={14} /> {t('store_tag_barcode_btn', 'Barra / QR / NFC')}
                       </button>
+                      {!item.is_universal_service && (
+                        <label className="btn-secondary flex items-center gap-1.5 text-xs cursor-pointer" title={t('store_pos_visibility_hint', 'Mostrar en el punto de venta')}>
+                          <input
+                            type="checkbox"
+                            checked={item.show_in_pos !== false}
+                            onChange={(e) => togglePosVisibility(item.id, e.target.checked)}
+                          />
+                          {t('store_show_in_pos', 'En POS')}
+                        </label>
+                      )}
                       {!item.is_universal_service && (
                         <button onClick={() => removeItem(item.id)} className="btn-secondary text-red-600"><Trash2 size={16} /></button>
                       )}
