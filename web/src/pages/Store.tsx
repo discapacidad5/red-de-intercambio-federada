@@ -44,6 +44,8 @@ export default function Store() {
   const [catAddProductId, setCatAddProductId] = useState('')
   const [catAddStock, setCatAddStock] = useState('')
   const [catAddSaving, setCatAddSaving] = useState(false)
+  const [stockInputs, setStockInputs] = useState<Record<string, string>>({})
+  const [stockSaving, setStockSaving] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -371,15 +373,37 @@ export default function Store() {
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))]
   const storeCategories = [...new Set(allStores.map((s) => s.parent_category || s.category).filter(Boolean))].sort()
 
+  // Reabastecer / contar inventario: 'add' suma al stock actual (nueva
+  // cosecha/ingreso), 'set' fija el conteo. Historial visible en el stock.
+  const adjustStock = async (item: any, mode: 'add' | 'set') => {
+    const raw = stockInputs[item.id]
+    if (raw === undefined || raw === '') return
+    const qty = parseInt(raw) || 0
+    const newStock = mode === 'add' ? (item.stock || 0) + qty : qty
+    setStockSaving(item.id)
+    try {
+      await api.put(`/store/items/${item.id}/stock`, { stock: newStock })
+      setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, stock: newStock } : i))
+      setStockInputs(prev => ({ ...prev, [item.id]: '' }))
+    } catch (e: any) {
+      setError(e.message || 'Error actualizando stock')
+    } finally {
+      setStockSaving(null)
+    }
+  }
+
   // Agregar producto del catálogo existente — tal como está en el catálogo,
   // sin crear ni modificar: solo elige el producto y cuánto vendes (stock).
   const handleCatalogAdd = async () => {
     if (!catAddProductId) return
     setCatAddSaving(true)
     try {
+      const stock = catAddStock === '' ? 0 : parseInt(catAddStock) || 0
       await api.post('/store/items', {
         product_id: catAddProductId,
-        stock: catAddStock === '' ? 0 : parseInt(catAddStock) || 0,
+        stock,
+        // Stock 0 o vacío = servicio/ilimitado — nunca "agotado" ni oculto del POS
+        is_service: stock <= 0,
       })
       setCatAddProductId('')
       setCatAddStock('')
@@ -1119,9 +1143,37 @@ export default function Store() {
                         </div>
                       )}
                       {!item.is_service && (
-                        <span className={`text-sm ${item.stock === 0 ? 'text-red-500' : 'text-gray-500'}`}>
-                          {t('store_stock', 'Stock:')} {item.stock}{item.stock === 0 ? ` (${t('store_sold_out', 'agotado')})` : ''}
-                        </span>
+                        <div className="space-y-1">
+                          <span className={`text-sm ${item.stock === 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                            {t('store_stock', 'Stock:')} {item.stock}{item.stock === 0 ? ` (${t('store_sold_out', 'agotado')})` : ''}
+                          </span>
+                          {/* Reabastecer / contar inventario — Añadir suma al stock, Poner fija el conteo */}
+                          <div className="flex gap-1 items-center">
+                            <input
+                              type="number" min={0}
+                              className="input !py-0.5 !px-1.5 text-xs w-16"
+                              placeholder="0"
+                              value={stockInputs[item.id] ?? ''}
+                              onChange={(e) => setStockInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            />
+                            <button
+                              onClick={() => adjustStock(item, 'add')}
+                              disabled={stockSaving === item.id}
+                              className="text-[10px] font-bold text-emerald-700 bg-white border border-emerald-500 px-2 py-0.5 rounded-lg hover:bg-emerald-50 disabled:opacity-50"
+                              title={t('stock_add_hint', 'Sumar al stock actual (nueva cosecha/ingreso)')}
+                            >
+                              ＋ {t('stock_add', 'Añadir')}
+                            </button>
+                            <button
+                              onClick={() => adjustStock(item, 'set')}
+                              disabled={stockSaving === item.id}
+                              className="text-[10px] font-bold text-blue-700 bg-white border border-blue-500 px-2 py-0.5 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+                              title={t('stock_set_hint', 'Fijar el conteo de inventario')}
+                            >
+                              ✎ {t('stock_set', 'Poner')}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                     <div className="flex gap-2 mt-3 flex-wrap">

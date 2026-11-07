@@ -560,6 +560,7 @@ type AddStoreItemRequest struct {
 	Stock            int64      `json:"stock"`
 	ExternalOpID     *uuid.UUID `json:"external_op_id"`
 	OwnerID          string     `json:"owner_id,omitempty"`
+	IsService        bool       `json:"is_service"`
 }
 
 func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) {
@@ -686,6 +687,7 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 		ExtraDescription: extraDescription,
 		Stock:            req.Stock,
 		ExternalOpID:     req.ExternalOpID,
+		IsService:        req.IsService,
 	})
 	if err != nil {
 		writeError(w, 400, err.Error())
