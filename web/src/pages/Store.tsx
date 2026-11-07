@@ -49,6 +49,9 @@ export default function Store() {
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<any>({})
   const [editSaving, setEditSaving] = useState(false)
+  const [storeCats, setStoreCats] = useState<any[]>([])
+  const [showCats, setShowCats] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
   const [showHelp, setShowHelp] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -114,6 +117,22 @@ export default function Store() {
   // Filtros para browse
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+
+  const loadCats = () => {
+    api.get('/store/categories').then((d: any) => setStoreCats(Array.isArray(d) ? d : [])).catch(() => {})
+  }
+  const createCat = async () => {
+    const name = newCatName.trim()
+    if (!name) return
+    try {
+      await api.post('/store/categories', { name })
+      setNewCatName('')
+      loadCats()
+    } catch (e: any) { setError(e.message || 'Error') }
+  }
+  const deleteCat = async (id: string) => {
+    try { await api.delete(`/store/categories/${id}`); loadCats() } catch (e: any) { setError(e.message || 'Error') }
+  }
 
   const load = () => {
     api.get('/store/items').then((d: any) => setItems(Array.isArray(d) ? d : [])).catch(() => {})
@@ -233,7 +252,7 @@ export default function Store() {
     }
   }
 
-  useEffect(() => { load() }, [i18n.language])
+  useEffect(() => { load(); loadCats() }, [i18n.language])
 
   // Cargar jerarquia de categorias (3 niveles)
   useEffect(() => {
@@ -574,7 +593,10 @@ export default function Store() {
           <div className="flex justify-between items-center flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2"><StoreIcon size={18} />{t('store_my_personal_store', 'Mi Tienda Personal (Productos y Servicios)')}</h2>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => { setShowCatalogAdd(!showCatalogAdd); setShowForm(false) }} className="btn-secondary flex items-center gap-2 text-sm">
+              <button onClick={() => { setShowCats(!showCats); setShowForm(false); setShowCatalogAdd(false) }} className="btn-secondary flex items-center gap-2 text-sm">
+                <Layers size={16} />{t('store_categories_btn', 'Categorías')}
+              </button>
+              <button onClick={() => { setShowCatalogAdd(!showCatalogAdd); setShowForm(false); setShowCats(false) }} className="btn-secondary flex items-center gap-2 text-sm">
                 <Package size={16} />{t('store_add_catalog_btn', 'Agregar del catálogo')}
               </button>
               <button onClick={() => { setShowBasketBuilder(!showBasketBuilder); setSavedBasketTag(null) }} className="btn-secondary flex items-center gap-2 text-sm">
@@ -585,6 +607,40 @@ export default function Store() {
           </div>
 
           {successMsg && <div className="text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 p-3 rounded-lg">{successMsg}</div>}
+
+          {/* Gestor de categorías propias — el POS las replica */}
+          {showCats && (
+            <div className="card bg-purple-50 border border-purple-200 space-y-3">
+              <h3 className="font-semibold flex items-center gap-2 text-purple-900">
+                <Layers size={18} />{t('store_categories_title', 'Mis categorías')}
+              </h3>
+              <p className="text-xs text-purple-700">
+                {t('store_categories_desc', 'Crea tus categorías aquí — luego las seleccionas al editar cada producto y el punto de venta las replica.')}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  className="input flex-1"
+                  placeholder={t('store_new_cat_ph', 'Nueva categoría...')}
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && createCat()}
+                />
+                <button onClick={createCat} className="btn-primary text-sm" disabled={!newCatName.trim()}>
+                  <Plus size={14} /> {t('store_create_cat', 'Crear')}
+                </button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {storeCats.length === 0 ? (
+                  <p className="text-xs text-gray-500">{t('store_no_cats', 'Sin categorías — crea la primera arriba.')}</p>
+                ) : storeCats.map((c: any) => (
+                  <span key={c.id} className="inline-flex items-center gap-1.5 text-xs font-bold bg-white border border-purple-300 text-purple-800 px-2.5 py-1 rounded-full">
+                    {c.name}
+                    <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Agregar producto del catálogo existente — tal como está */}
           {showCatalogAdd && (
@@ -1246,31 +1302,66 @@ export default function Store() {
                       )}
                     </div>
                     {/* Formulario de edición del item */}
-                    {editingItem === item.id && (
+                    {editingItem === item.id && (() => {
+                      const isCatalog = !!item.product_id // viene del catálogo — precio/unidad/nombre bloqueados
+                      return (
                       <div className="mt-3 border-t border-gray-200 pt-3 space-y-2 text-xs">
                         <div>
-                          <label className="label !text-[10px]">{t('store_edit_cat', 'Categoría')}</label>
-                          <input className="input !py-0.5 text-xs" value={editForm.category} onChange={(e) => setEditForm((f: any) => ({ ...f, category: e.target.value }))} />
+                          <label className="label !text-[10px]">{t('store_edit_cat', 'Categoría (de tu lista)')}</label>
+                          <select
+                            className="input !py-0.5 text-xs"
+                            value={editForm.category}
+                            onChange={(e) => setEditForm((f: any) => ({ ...f, category: e.target.value }))}
+                          >
+                            <option value="">{t('store_no_cat', '— Sin categoría —')}</option>
+                            {storeCats.map((c: any) => (
+                              <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                            {/* Si el item ya tiene una categoría que no está en la lista, mostrarla */}
+                            {editForm.category && !storeCats.some((c: any) => c.name === editForm.category) && (
+                              <option value={editForm.category}>{editForm.category} ({t('store_cat_custom', 'personalizada')})</option>
+                            )}
+                          </select>
+                          <p className="text-[9px] text-gray-500 mt-0.5">{t('store_cat_hint', 'Crea tus categorías en el botón "Categorías" de arriba')}</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="label !text-[10px]">{t('store_edit_unit', 'Unidad (saco, kg, L, unidad)')}</label>
-                            <input className="input !py-0.5 text-xs" value={editForm.unit} onChange={(e) => setEditForm((f: any) => ({ ...f, unit: e.target.value }))} />
+                        {isCatalog ? (
+                          /* Producto del catálogo: solo dosificación + stock —
+                             precio/unidad heredados del catálogo padre, no editables */
+                          <div className="bg-blue-50 border border-blue-200 rounded p-2 space-y-2">
+                            <p className="text-[10px] text-blue-800 font-bold">
+                              {t('store_catalog_locked', 'Producto del catálogo — precio y unidad heredados (no editables)')}
+                            </p>
+                            <p className="text-[10px] text-gray-600">
+                              {product?.name || item.product_name} · {displayPrice} {currency}/{unit}
+                            </p>
+                            <div>
+                              <label className="label !text-[10px]">{t('store_edit_qty_unit', 'Cantidad por unidad (kg por saco — para dosificar)')}</label>
+                              <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.quantity_per_unit} onChange={(e) => setEditForm((f: any) => ({ ...f, quantity_per_unit: parseFloat(e.target.value) || 1 }))} />
+                              <p className="text-[9px] text-gray-500 mt-0.5">{t('store_dosage_hint', 'Ej: saco de 20 kg → 20. Al vender por kilo el precio se divide solo.')}</p>
+                            </div>
                           </div>
-                          <div>
-                            <label className="label !text-[10px]">{t('store_edit_qty_unit', 'Cantidad por unidad (kg por saco)')}</label>
-                            <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.quantity_per_unit} onChange={(e) => setEditForm((f: any) => ({ ...f, quantity_per_unit: parseFloat(e.target.value) || 1 }))} />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="label !text-[10px]">{t('store_edit_price', 'Precio TQ')}</label>
-                            <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.price_trueque} onChange={(e) => setEditForm((f: any) => ({ ...f, price_trueque: parseFloat(e.target.value) || 0 }))} />
-                          </div>
-                          <div>
-                            <label className="label !text-[10px]">{t('store_edit_stock', 'Stock')}</label>
-                            <input type="number" className="input !py-0.5 text-xs" value={editForm.stock} onChange={(e) => setEditForm((f: any) => ({ ...f, stock: parseInt(e.target.value) || 0 }))} />
-                          </div>
+                        ) : (
+                          /* Producto propio: unidad + precio editables */
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="label !text-[10px]">{t('store_edit_unit', 'Unidad (saco, kg, L, unidad)')}</label>
+                                <input className="input !py-0.5 text-xs" value={editForm.unit} onChange={(e) => setEditForm((f: any) => ({ ...f, unit: e.target.value }))} />
+                              </div>
+                              <div>
+                                <label className="label !text-[10px]">{t('store_edit_qty_unit', 'Cantidad por unidad')}</label>
+                                <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.quantity_per_unit} onChange={(e) => setEditForm((f: any) => ({ ...f, quantity_per_unit: parseFloat(e.target.value) || 1 }))} />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="label !text-[10px]">{t('store_edit_price', 'Precio TQ (solo productos propios)')}</label>
+                              <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.price_trueque} onChange={(e) => setEditForm((f: any) => ({ ...f, price_trueque: parseFloat(e.target.value) || 0 }))} />
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="label !text-[10px]">{t('store_edit_stock', 'Stock')}</label>
+                          <input type="number" className="input !py-0.5 text-xs" value={editForm.stock} onChange={(e) => setEditForm((f: any) => ({ ...f, stock: parseInt(e.target.value) || 0 }))} />
                         </div>
                         <label className="flex items-center gap-2 text-xs cursor-pointer">
                           <input type="checkbox" checked={!!editForm.is_service} onChange={(e) => setEditForm((f: any) => ({ ...f, is_service: e.target.checked }))} />
@@ -1293,7 +1384,8 @@ export default function Store() {
                           <button onClick={() => setEditingItem(null)} className="btn-secondary text-xs">{t('common:cancel', 'Cancelar')}</button>
                         </div>
                       </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 )
               })}

@@ -76,6 +76,11 @@ func (eh *ExternalHandler) RegisterRoutesWithAuth(r chi.Router, am *AuthMiddlewa
 	// Edicion completa del item: unidad, cantidad por unidad (divisibilidad),
 	// precio, modo de stock (contable/ilimitado), nombre/descripcion
 	r.With(am.RequireAuth).Put("/api/store/items/{id}", eh.updateStoreItem)
+	// Categorías propias de la tienda del dueño — se asignan a items y el
+	// POS las replica automáticamente
+	r.With(am.RequireAuth).Get("/api/store/categories", eh.listStoreCategories)
+	r.With(am.RequireAuth).Post("/api/store/categories", eh.createStoreCategory)
+	r.With(am.RequireAuth).Delete("/api/store/categories/{id}", eh.deleteStoreCategory)
 	r.Post("/api/store/purchase", eh.purchase)
 	r.Post("/api/store/composite", eh.addCompositeItem)
 	r.Get("/api/store/composite/{id}/composition", eh.getComposition)
@@ -781,6 +786,113 @@ func (eh *ExternalHandler) deactivateStoreItem(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "deactivated"})
+}
+
+// listStoreCategories lista las categorías propias del dueño (o de la org
+// que administra). El dueño las crea y luego asigna items por nombre.
+func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	rows, err := eh.Pool.Query(r.Context(), `
+		SELECT id, name FROM store_categories
+		WHERE owner_id = $1
+		   OR owner_id IN (SELECT organization_id FROM organization_board_members
+		                   WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+		ORDER BY name`, userID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to list categories")
+		return
+	}
+	defer rows.Close()
+	cats := []map[string]interface{}{}
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if rows.Scan(&id, &name) == nil {
+			cats = append(cats, map[string]interface{}{"id": id.String(), "name": name})
+		}
+	}
+	writeJSON(w, 200, cats)
+}
+
+// createStoreCategory crea una categoría propia del dueño — aparece en la
+// lista para asignarla a productos y el POS la replica cuando tiene items.
+func (eh *ExternalHandler) createStoreCategory(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	var req struct {
+		Name    string `json:"name"`
+		OwnerID string `json:"owner_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeError(w, 400, "nombre requerido")
+		return
+	}
+	ownerID := userID
+	if req.OwnerID != "" {
+		if t, e := uuid.Parse(req.OwnerID); e == nil && t != userID {
+			var ok bool
+			_ = eh.Pool.QueryRow(r.Context(), `
+				SELECT EXISTS(SELECT 1 FROM organization_board_members
+					WHERE organization_id = $1 AND user_id = $2 AND COALESCE(is_active, true) = true)`,
+				t, userID,
+			).Scan(&ok)
+			if ok {
+				ownerID = t
+			}
+		}
+	}
+	var id uuid.UUID
+	err = eh.Pool.QueryRow(r.Context(), `
+		INSERT INTO store_categories (node_domain, owner_id, name)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (owner_id, name) DO UPDATE SET name = EXCLUDED.name
+		RETURNING id`, eh.NodeDomain, ownerID, name,
+	).Scan(&id)
+	if err != nil {
+		writeError(w, 500, "failed to create category")
+		return
+	}
+	writeJSON(w, 201, map[string]interface{}{"id": id.String(), "name": name})
+}
+
+// deleteStoreCategory elimina una categoría propia (los items conservan su
+// texto de categoría — la categoría solo desaparece de la lista).
+func (eh *ExternalHandler) deleteStoreCategory(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, 400, "invalid id")
+		return
+	}
+	res, err := eh.Pool.Exec(r.Context(), `
+		DELETE FROM store_categories
+		WHERE id = $1 AND (owner_id = $2
+		   OR owner_id IN (SELECT organization_id FROM organization_board_members
+		                   WHERE user_id = $2 AND COALESCE(is_active, true) = true))`,
+		id, userID,
+	)
+	if err != nil || res.RowsAffected() == 0 {
+		writeError(w, 404, "categoría no encontrada")
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"status": "deleted"})
 }
 
 // updateStoreItem edita un item de la tienda: nombre, categoría, unidad,
