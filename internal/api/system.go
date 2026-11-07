@@ -774,9 +774,16 @@ func (h *SystemHandler) listProducts(w http.ResponseWriter, r *http.Request) {
 		       p.unit, p.price_per_unit, COALESCE(p.price_per_kg,0), COALESCE(p.weight_kg,0),
 		       COALESCE(p.base_unit,'kg'), p.is_approved, p.origin, p.badge, p.image_url,
 		       p.product_code, p.is_system, p.is_hidden, COALESCE(p.image_thumb_url,''),
-		       COALESCE(p.is_allowed, NULL)
+		       COALESCE(
+		           CASE WHEN p.node_domain = '__FEDERATION__' THEN allow.is_allowed
+		                ELSE p.is_allowed END,
+		           NULL)
 		FROM products p
-		WHERE p.node_domain IN ($1, 'localhost', 'default') AND p.is_hidden = false`
+		LEFT JOIN product_node_allowlist allow
+		       ON allow.product_id = p.id AND allow.node_domain = $1
+		WHERE (p.node_domain IN ($1, 'localhost', 'default')
+		       OR (p.node_domain = '__FEDERATION__' AND allow.is_allowed = true))
+		  AND p.is_hidden = false`
 	args := []interface{}{nodeDomain}
 	if search != "" {
 		query += ` AND (LOWER(p.name) LIKE LOWER($2) OR EXISTS (
