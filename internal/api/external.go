@@ -796,11 +796,21 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 		writeError(w, 401, "authentication required")
 		return
 	}
+	// Une: categorías creadas + categorías ya usadas por los items del dueño
+	// (un item del catálogo puede traer su categoría sin que el dueño la cree —
+	// debe aparecer igual en la lista para filtrar/asignar)
 	rows, err := eh.Pool.Query(r.Context(), `
-		SELECT id, name FROM store_categories
+		SELECT id, name, 'created' AS src FROM store_categories
 		WHERE owner_id = $1
 		   OR owner_id IN (SELECT organization_id FROM organization_board_members
 		                   WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+		UNION
+		SELECT NULL, category, 'items' FROM store_items
+		WHERE (owner_id = $1 OR owner_id IS NULL
+		   OR owner_id IN (SELECT organization_id FROM organization_board_members
+		                   WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+		  AND COALESCE(category, '') <> ''
+		  AND is_active = true
 		ORDER BY name`, userID,
 	)
 	if err != nil {
@@ -810,10 +820,14 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 	defer rows.Close()
 	cats := []map[string]interface{}{}
 	for rows.Next() {
-		var id uuid.UUID
-		var name string
-		if rows.Scan(&id, &name) == nil {
-			cats = append(cats, map[string]interface{}{"id": id.String(), "name": name})
+		var id *uuid.UUID
+		var name, src string
+		if rows.Scan(&id, &name, &src) == nil {
+			entry := map[string]interface{}{"name": name, "source": src}
+			if id != nil {
+				entry["id"] = id.String()
+			}
+			cats = append(cats, entry)
 		}
 	}
 	writeJSON(w, 200, cats)

@@ -634,9 +634,11 @@ export default function Store() {
                 {storeCats.length === 0 ? (
                   <p className="text-xs text-gray-500">{t('store_no_cats', 'Sin categorías — crea la primera arriba.')}</p>
                 ) : storeCats.map((c: any) => (
-                  <span key={c.id} className="inline-flex items-center gap-1.5 text-xs font-bold bg-white border border-purple-300 text-purple-800 px-2.5 py-1 rounded-full">
+                  <span key={c.id || c.name} className="inline-flex items-center gap-1.5 text-xs font-bold bg-white border border-purple-300 text-purple-800 px-2.5 py-1 rounded-full">
                     {c.name}
-                    <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
+                    {c.source === 'created' && c.id && (
+                      <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
+                    )}
                   </span>
                 ))}
               </div>
