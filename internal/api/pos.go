@@ -609,6 +609,14 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			  AND COALESCE(si.show_in_pos, true) = true
 			  AND (si.is_service = true OR si.stock > 0 OR COALESCE(p.is_universal_service, false) = true)
 			  AND (p.id IS NULL OR (p.is_approved = true AND COALESCE(p.is_allowed, true) = true))
+			  -- Categorías ocultas: el dueño decide qué categorías no van al POS.
+			  -- Se oculta si la categoría principal O cualquiera de sus
+			  -- categorías extra está marcada como no-visible.
+			  AND NOT EXISTS (
+			      SELECT 1 FROM store_categories sc
+			      WHERE sc.owner_id = $1 AND sc.show_in_pos = false
+			        AND (sc.name = si.category OR si.categories && ARRAY[sc.name])
+			  )
 			ORDER BY si.is_service ASC, si.product_name ASC`, sellerID)
 		if err == nil {
 			defer rows.Close()

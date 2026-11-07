@@ -81,6 +81,7 @@ func (eh *ExternalHandler) RegisterRoutesWithAuth(r chi.Router, am *AuthMiddlewa
 	r.With(am.RequireAuth).Get("/api/store/categories", eh.listStoreCategories)
 	r.With(am.RequireAuth).Post("/api/store/categories", eh.createStoreCategory)
 	r.With(am.RequireAuth).Delete("/api/store/categories/{id}", eh.deleteStoreCategory)
+	r.With(am.RequireAuth).Put("/api/store/categories/visibility", eh.toggleCategoryVisibility)
 	r.Post("/api/store/purchase", eh.purchase)
 	r.Post("/api/store/composite", eh.addCompositeItem)
 	r.Get("/api/store/composite/{id}/composition", eh.getComposition)
@@ -800,17 +801,21 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 	// (un item del catálogo puede traer su categoría sin que el dueño la cree —
 	// debe aparecer igual en la lista para filtrar/asignar)
 	rows, err := eh.Pool.Query(r.Context(), `
-		SELECT id, name, 'created' AS src FROM store_categories
-		WHERE owner_id = $1
-		   OR owner_id IN (SELECT organization_id FROM organization_board_members
-		                   WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+		SELECT sc.id, sc.name, 'created' AS src, COALESCE(sc.show_in_pos, true)
+		FROM store_categories sc
+		WHERE sc.owner_id = $1
+		   OR sc.owner_id IN (SELECT organization_id FROM organization_board_members
+		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true)
 		UNION
-		SELECT NULL, category, 'items' FROM store_items
-		WHERE (owner_id = $1 OR owner_id IS NULL
-		   OR owner_id IN (SELECT organization_id FROM organization_board_members
-		                   WHERE user_id = $1 AND COALESCE(is_active, true) = true))
-		  AND COALESCE(category, '') <> ''
-		  AND is_active = true
+		SELECT NULL, si.category, 'items', COALESCE(sc2.show_in_pos, true)
+		FROM store_items si
+		LEFT JOIN store_categories sc2
+		       ON sc2.owner_id = COALESCE(si.owner_id, $1) AND sc2.name = si.category
+		WHERE (si.owner_id = $1 OR si.owner_id IS NULL
+		   OR si.owner_id IN (SELECT organization_id FROM organization_board_members
+		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+		  AND COALESCE(si.category, '') <> ''
+		  AND si.is_active = true
 		ORDER BY name`, userID,
 	)
 	if err != nil {
@@ -822,8 +827,9 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 	for rows.Next() {
 		var id *uuid.UUID
 		var name, src string
-		if rows.Scan(&id, &name, &src) == nil {
-			entry := map[string]interface{}{"name": name, "source": src}
+		var showInPos bool
+		if rows.Scan(&id, &name, &src, &showInPos) == nil {
+			entry := map[string]interface{}{"name": name, "source": src, "show_in_pos": showInPos}
 			if id != nil {
 				entry["id"] = id.String()
 			}
@@ -909,6 +915,59 @@ func (eh *ExternalHandler) deleteStoreCategory(w http.ResponseWriter, r *http.Re
 	writeJSON(w, 200, map[string]interface{}{"status": "deleted"})
 }
 
+// toggleCategoryVisibility marca si una categoría aparece en el POS.
+// Hace UPSERT en store_categories — sirve tanto para categorías creadas
+// como para las traídas del catálogo (inserta la fila si no existía).
+func (eh *ExternalHandler) toggleCategoryVisibility(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	var req struct {
+		Name      string `json:"name"`
+		ShowInPos bool   `json:"show_in_pos"`
+		OwnerID   string `json:"owner_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeError(w, 400, "name requerido")
+		return
+	}
+	ownerID := userID
+	if req.OwnerID != "" {
+		if t, e := uuid.Parse(req.OwnerID); e == nil && t != userID {
+			var ok bool
+			_ = eh.Pool.QueryRow(r.Context(), `
+				SELECT EXISTS(SELECT 1 FROM organization_board_members
+					WHERE organization_id = $1 AND user_id = $2 AND COALESCE(is_active, true) = true)`,
+				t, userID,
+			).Scan(&ok)
+			if ok {
+				ownerID = t
+			}
+		}
+	}
+	// Upsert: si la categoría viene del catálogo (sin fila propia), la crea
+	// con la visibilidad elegida — funciona para ambas fuentes.
+	_, err = eh.Pool.Exec(r.Context(), `
+		INSERT INTO store_categories (node_domain, owner_id, name, show_in_pos)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (owner_id, name)
+		DO UPDATE SET show_in_pos = $4, created_at = store_categories.created_at`,
+		eh.NodeDomain, ownerID, name, req.ShowInPos,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to update category visibility")
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"status": "updated", "show_in_pos": req.ShowInPos})
+}
+
 // updateStoreItem edita un item de la tienda: nombre, categoría, unidad,
 // cantidad por unidad (ej: saco = 20 kg → vender 1 kg divide el precio),
 // precio, stock y modo ilimitado (is_service). Solo el dueño o board.
@@ -927,6 +986,7 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		ProductName     string   `json:"product_name"`
 		Description     string   `json:"description"`
 		Category        string   `json:"category"`
+		Categories      []string `json:"categories"`
 		ParentCategory  string   `json:"parent_category"`
 		Subcategory     string   `json:"subcategory"`
 		Unit            string   `json:"unit"`
@@ -940,11 +1000,21 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		writeError(w, 400, "invalid request body")
 		return
 	}
+	// Multi-categoría: 'category' = primera (compat) + 'categories' = todas
+	var categories interface{}
+	if len(req.Categories) > 0 {
+		categories = req.Categories
+	}
+	primaryCat := strings.TrimSpace(req.Category)
+	if len(req.Categories) > 0 && primaryCat == "" {
+		primaryCat = req.Categories[0]
+	}
 	res, err := eh.Pool.Exec(r.Context(), `
 		UPDATE store_items SET
 			product_name    = COALESCE(NULLIF($1,''), product_name),
 			description     = COALESCE(NULLIF($2,''), description),
 			category        = $3,
+			categories      = COALESCE($12, categories),
 			parent_category = COALESCE(NULLIF($4,''), parent_category),
 			subcategory     = COALESCE(NULLIF($5,''), subcategory),
 			unit            = COALESCE(NULLIF($6,''), unit),
@@ -954,15 +1024,16 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			stock           = COALESCE($10, stock),
 			is_service      = COALESCE($11, is_service),
 			updated_at      = NOW()
-		WHERE id = $12 AND (
+		WHERE id = $13 AND (
 			owner_id = $13 OR owner_id IS NULL
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $13 AND COALESCE(obm.is_active, true) = true)
 		)`,
-		req.ProductName, req.Description, strings.TrimSpace(req.Category),
+		req.ProductName, req.Description, primaryCat,
 		req.ParentCategory, req.Subcategory, req.Unit,
 		req.QuantityPerUnit, req.PriceTrueque, req.ExtraCosts, req.Stock, req.IsService,
+		categories,
 		itemID, userID,
 	)
 	if err != nil {

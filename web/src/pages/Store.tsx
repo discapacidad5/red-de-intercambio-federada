@@ -634,8 +634,24 @@ export default function Store() {
                 {storeCats.length === 0 ? (
                   <p className="text-xs text-gray-500">{t('store_no_cats', 'Sin categorías — crea la primera arriba.')}</p>
                 ) : storeCats.map((c: any) => (
-                  <span key={c.id || c.name} className="inline-flex items-center gap-1.5 text-xs font-bold bg-white border border-purple-300 text-purple-800 px-2.5 py-1 rounded-full">
+                  <span key={c.id || c.name} className={`inline-flex items-center gap-1.5 text-xs font-bold border px-2.5 py-1 rounded-full ${
+                    c.show_in_pos === false ? 'bg-gray-100 border-gray-300 text-gray-400' : 'bg-white border-purple-300 text-purple-800'
+                  }`}>
                     {c.name}
+                    {/* Ojo: mostrar/ocultar esta categoría en el POS */}
+                    <button
+                      onClick={async () => {
+                        const show = c.show_in_pos === false
+                        try {
+                          await api.put('/store/categories/visibility', { name: c.name, show_in_pos: show })
+                          setStoreCats(prev => prev.map((x: any) => x.name === c.name ? { ...x, show_in_pos: show } : x))
+                        } catch (e: any) { setError(e.message || 'Error') }
+                      }}
+                      className={c.show_in_pos === false ? 'text-gray-400 hover:text-gray-600' : 'text-purple-600 hover:text-purple-800'}
+                      title={c.show_in_pos === false ? 'Oculta del POS — tocar para mostrar' : 'Visible en POS — tocar para ocultar'}
+                    >
+                      {c.show_in_pos === false ? '👁️‍🗨️' : '👁️'}
+                    </button>
                     {c.source === 'created' && c.id && (
                       <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
                     )}
@@ -1332,22 +1348,28 @@ export default function Store() {
                       return (
                       <div className="mt-3 border-t border-gray-200 pt-3 space-y-2 text-xs">
                         <div>
-                          <label className="label !text-[10px]">{t('store_edit_cat', 'Categoría (de tu lista)')}</label>
-                          <select
-                            className="input !py-0.5 text-xs"
-                            value={editForm.category}
-                            onChange={(e) => setEditForm((f: any) => ({ ...f, category: e.target.value }))}
-                          >
-                            <option value="">{t('store_no_cat', '— Sin categoría —')}</option>
-                            {storeCats.map((c: any) => (
-                              <option key={c.id} value={c.name}>{c.name}</option>
-                            ))}
-                            {/* Si el item ya tiene una categoría que no está en la lista, mostrarla */}
-                            {editForm.category && !storeCats.some((c: any) => c.name === editForm.category) && (
-                              <option value={editForm.category}>{editForm.category} ({t('store_cat_custom', 'personalizada')})</option>
-                            )}
-                          </select>
-                          <p className="text-[9px] text-gray-500 mt-0.5">{t('store_cat_hint', 'Crea tus categorías en el botón "Categorías" de arriba')}</p>
+                          <label className="label !text-[10px]">{t('store_edit_cat', 'Categorías (puedes elegir varias)')}</label>
+                          <div className="flex gap-1.5 flex-wrap mt-1">
+                            {storeCats.map((c: any) => {
+                              const sel = (editForm.categories || []).includes(c.name) || editForm.category === c.name
+                              return (
+                                <button
+                                  key={c.id || c.name}
+                                  type="button"
+                                  onClick={() => setEditForm((f: any) => {
+                                    const cats = new Set(f.categories || (f.category ? [f.category] : []))
+                                    cats.has(c.name) ? cats.delete(c.name) : cats.add(c.name)
+                                    const arr = [...cats]
+                                    return { ...f, categories: arr, category: arr[0] || '' }
+                                  })}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
+                                    sel ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-500 border-gray-300 hover:border-trueque-400'
+                                  }`}
+                                >{c.name}</button>
+                              )
+                            })}
+                          </div>
+                          <p className="text-[9px] text-gray-500 mt-0.5">{t('store_cat_hint', 'Puedes asignar el producto a varias categorías — crea más en el botón "Categorías"')}</p>
                         </div>
                         {isCatalog ? (
                           /* Producto del catálogo: solo dosificación + stock —
