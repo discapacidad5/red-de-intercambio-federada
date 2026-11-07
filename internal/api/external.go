@@ -918,7 +918,7 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 	res, err := eh.Pool.Exec(r.Context(), `
 		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()
 		WHERE id = $2 AND (
-			owner_id = $3
+			owner_id = $3 OR owner_id IS NULL
 			OR EXISTS(
 				SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
