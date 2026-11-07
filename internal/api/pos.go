@@ -650,35 +650,54 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Tarifa energética del nodo: precio_hora real por tipo de trabajo
-	// (vital_total / work_hours_per_day × multiplicador effort_admin/technical/agricultural).
-	// Los servicios universales de trabajo se calculan con esto, no con el
-	// price_per_unit crudo sembrado — así la jornada completa usa las horas
-	// configuradas en el nodo (8, 5, etc.) y el multiplicador del tipo de trabajo.
-	var vitalTotal, effAdmin, effTech, effAgr float64
-	var workHours int
-	tErr := h.Pool.QueryRow(ctx, `
-		SELECT vital_food + vital_water + vital_domestic + vital_services,
-		       work_hours_per_day, effort_admin, effort_technical, effort_agricultural
-		FROM energy_tariff WHERE node_domain = $1`, h.NodeDomain,
-	).Scan(&vitalTotal, &workHours, &effAdmin, &effTech, &effAgr)
-	baseRate := 0.0
-	if tErr == nil && workHours > 0 {
-		baseRate = vitalTotal / float64(workHours)
+	// Tarifa por hora de los servicios de trabajo — valores base del sistema:
+	//   Sedentario/oficina: 1.00 TQ/h  |  Profesional/especialista: 1.15 TQ/h
+	//   Pesado/agrícola:    1.30 TQ/h
+	// El nodo puede sobreescribir las tarifas en node_config.work_rates
+	// (JSON {"admin":1.00,"tecnico":1.15,"agricola":1.30}) y las horas de la
+	// jornada en energy_tariff.work_hours_per_day para futuros servicios
+	// (jornada día/quincena/mes).
+	rateAdmin, rateTech, rateAgr := 1.00, 1.15, 1.30
+	workHours := 8
+	var multJSON string
+	if err := h.Pool.QueryRow(ctx, `
+		SELECT COALESCE(work_multipliers::text,''), COALESCE(workday_hours, 8)
+		FROM node_config WHERE node_domain = $1`, h.NodeDomain,
+	).Scan(&multJSON, &workHours); err == nil && multJSON != "" {
+		var mults map[string]float64
+		if json.Unmarshal([]byte(multJSON), &mults) == nil {
+			// work_multipliers = multiplicadores sobre la base 1.00 TQ/hora
+			// (ej: {"admin":1.0,"tecnico":1.15,"agricola":1.3})
+			if v := mults["admin"]; v > 0 {
+				rateAdmin = v
+			}
+			if v := mults["tecnico"]; v > 0 {
+				rateTech = v
+			}
+			if v := mults["agricola"]; v > 0 {
+				rateAgr = v
+			}
+			if v := mults["technical"]; v > 0 {
+				rateTech = v
+			}
+			if v := mults["agricultural"]; v > 0 {
+				rateAgr = v
+			}
+		}
+	}
+	if workHours <= 0 {
+		workHours = 8
 	}
 	laborRate := func(cat, name, unit string) float64 {
-		if baseRate <= 0 {
-			return 0
-		}
 		lc := strings.ToLower(cat + " " + name)
-		rate := baseRate
+		rate := rateAdmin
 		switch {
 		case strings.Contains(lc, "agricola") || strings.Contains(lc, "conuco") || strings.Contains(lc, "mano vuelta") || strings.Contains(lc, "pesado"):
-			rate = baseRate * effAgr
-		case strings.Contains(lc, "tecnico") || strings.Contains(lc, "técnico"):
-			rate = baseRate * effTech
-		case strings.Contains(lc, "intelectual") || strings.Contains(lc, "oficina") || strings.Contains(lc, "admin"):
-			rate = baseRate * effAdmin
+			rate = rateAgr
+		case strings.Contains(lc, "tecnico") || strings.Contains(lc, "técnico") || strings.Contains(lc, "profesional") || strings.Contains(lc, "especialista"):
+			rate = rateTech
+		case strings.Contains(lc, "intelectual") || strings.Contains(lc, "oficina") || strings.Contains(lc, "admin") || strings.Contains(lc, "sedentario"):
+			rate = rateAdmin
 		}
 		if strings.EqualFold(unit, "jornada") || strings.Contains(lc, "jornada completa") {
 			return rate * float64(workHours)
@@ -687,7 +706,8 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Servicios universales del nodo (ej: Trabajo en el Conuco / Mano Vuelta)
-	matrixAvailable := baseRate > 0 && workHours > 0
+	// La matriz de trabajo siempre está disponible — tarifas fijas por hora.
+	matrixAvailable := true
 	uRows, uErr := h.Pool.Query(ctx, `
 		SELECT id::text, COALESCE(item_code, '90001'), name, COALESCE(category, 'Servicios'),
 		       COALESCE(unit, 'hora'), price_per_unit,
@@ -749,20 +769,21 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Matriz de servicios de trabajo — SIEMPRE presente en todo punto,
-	// aunque la tienda esté vacía. 3 tipos × (hora + jornada completa),
-	// calculados con la tarifa energética del nodo.
-	if matrixAvailable {
+	// aunque la tienda esté vacía. Tarifa fija por hora (TQ/hora):
+	//   Sedentario/oficina 1.00 | Profesional/especialista 1.15 | Pesado/agrícola 1.30
+	// La jornada usa las horas configuradas en energy_tariff.work_hours_per_day.
+	{
 		laborTypes := []struct {
 			suffix string
 			name   string
-			mult   float64
+			rate   float64
 		}{
-			{"admin", "Trabajo común / oficina", effAdmin},
-			{"tecnico", "Trabajo técnico / especialista", effTech},
-			{"agricola", "Trabajo pesado / agrícola (conuco)", effAgr},
+			{"admin", "Trabajo sedentario / oficina", rateAdmin},
+			{"tecnico", "Trabajo profesional / especialista", rateTech},
+			{"agricola", "Trabajo pesado / agrícola (conuco)", rateAgr},
 		}
 		for _, lt := range laborTypes {
-			rateHour := baseRate * lt.mult
+			rateHour := lt.rate
 			rateDay := rateHour * float64(workHours)
 			items = append(items, VendorCatalogCompactItem{
 				ID:          "svc-work-" + lt.suffix + "-hora",
