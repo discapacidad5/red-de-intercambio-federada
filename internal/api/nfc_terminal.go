@@ -4559,16 +4559,22 @@ func (h *NFCTerminalHandler) userLookup(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Lookup por documento: resolver doc_type+doc_number → username
-	// (user_documents es local del nodo)
+	// (user_documents es local del nodo). Acepta el código completo
+	// (cedula_v) o la letra corta (v) — sufijo del código.
 	if payload.Username == "" && payload.DocNumber != "" {
 		_ = h.NFC.Pool.QueryRow(r.Context(), `
 			SELECT u.username FROM user_documents d
 			JOIN users u ON u.id = d.user_id
-			WHERE UPPER(d.document_type_code) = UPPER($1)
-			  AND UPPER(d.document_number) = UPPER($2)
+			WHERE (UPPER(d.document_type_code) = UPPER($1)
+			       OR UPPER(d.document_type_code) LIKE '%_' || UPPER($1))
+			  AND UPPER(TRIM(d.document_number)) = UPPER(TRIM($2))
 			  AND u.node_domain = $3
 			LIMIT 1`, payload.DocType, payload.DocNumber, h.NFC.NodeDomain,
 		).Scan(&payload.Username)
+		if payload.Username == "" {
+			writeError(w, 400, "documento no registrado para este nodo")
+			return
+		}
 	}
 
 	if payload.Username == "" {
