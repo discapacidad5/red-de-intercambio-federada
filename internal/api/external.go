@@ -575,12 +575,14 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get owner ID from auth context
-	ownerIDVal, _ := eh.Auth.GetUserID(r)
-	var ownerID *uuid.UUID
-	if ownerIDVal != uuid.Nil {
-		ownerID = &ownerIDVal
+	// Get owner ID from auth context — si no hay, NO crear item con dueño
+	// nulo (después ningún chequeo de dueño matchea: toggle/categoría 404)
+	ownerIDVal, err := eh.Auth.GetUserID(r)
+	if err != nil || ownerIDVal == uuid.Nil {
+		writeError(w, 401, "no se pudo determinar el dueño del item")
+		return
 	}
+	ownerID := &ownerIDVal
 
 	// Tienda de organización: si el request indica otro owner (la org),
 	// el llamador debe ser board member de esa organización — así la org
@@ -827,7 +829,7 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			is_service      = COALESCE($11, is_service),
 			updated_at      = NOW()
 		WHERE id = $12 AND (
-			owner_id = $13
+			owner_id = $13 OR owner_id IS NULL
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $13 AND COALESCE(obm.is_active, true) = true)
@@ -873,7 +875,7 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 	res, err := eh.Pool.Exec(r.Context(), `
 		UPDATE store_items SET category = $1, parent_category = $2, subcategory = $3, updated_at = NOW()
 		WHERE id = $4 AND (
-			owner_id = $5
+			owner_id = $5 OR owner_id IS NULL
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $5 AND COALESCE(obm.is_active, true) = true)
@@ -996,7 +998,11 @@ func (eh *ExternalHandler) addCompositeItem(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ownerIDVal, _ := eh.Auth.GetUserID(r)
+	ownerIDVal, err := eh.Auth.GetUserID(r)
+	if err != nil || ownerIDVal == uuid.Nil {
+		writeError(w, 401, "no se pudo determinar el dueño del item")
+		return
+	}
 	var ownerID *uuid.UUID
 	if ownerIDVal != uuid.Nil {
 		ownerID = &ownerIDVal
