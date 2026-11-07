@@ -1406,6 +1406,7 @@ export default function Store() {
                                     { unit: unit, base: item.quantity_per_unit || 1 },
                                   ]
                                 return (
+                                  <>
                                   <div className="flex gap-1.5 flex-wrap">
                                     {opts.map((o) => {
                                       const sel = editForm.unit === o.unit
@@ -1428,11 +1429,31 @@ export default function Store() {
                                       )
                                     })}
                                   </div>
+                                  {/* Cantidad por presentación: eliges unidad + cuántos */}
+                                  {editForm.unit && (
+                                    <div className="mt-2">
+                                      <label className="label !text-[10px]">{t('store_sell_qty', `Cantidad por ${editForm.unit} (ej: 5 kg, 500 g)`)}</label>
+                                      <input
+                                        type="number" step="0.001" min={0} className="input !py-0.5 text-xs"
+                                        value={editForm.sell_qty || 1}
+                                        onChange={(e) => {
+                                          const q = parseFloat(e.target.value) || 0
+                                          const baseUnits = opts.find((o) => o.unit === editForm.unit)?.base || 1
+                                          setEditForm((f: any) => ({
+                                            ...f, sell_qty: q, quantity_per_unit: baseUnits * q,
+                                            price_trueque: item.price_per_kg > 0 ? +(item.price_per_kg * baseUnits * q).toFixed(4) : f.price_trueque,
+                                          }))
+                                        }}
+                                        placeholder="Ej: 5"
+                                      />
+                                    </div>
+                                  )}
+                                  </>
                                 )
                               })()}
                               {editForm.unit && item.price_per_kg > 0 && (
                                 <p className="text-[10px] font-bold text-emerald-800 mt-1">
-                                  {t('store_computed_price', 'Precio calculado:')} {editForm.price_trueque} {currency}/{editForm.unit}
+                                  {t('store_computed_price', 'Precio calculado:')} {editForm.price_trueque} {currency} por {editForm.quantity_per_unit || 1} {editForm.unit}
                                 </p>
                               )}
                             </div>
