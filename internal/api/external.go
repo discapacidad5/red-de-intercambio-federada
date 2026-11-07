@@ -630,7 +630,12 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 	category := req.Category
 	origin := req.Origin
 	unit := req.Unit
+	// quantity_per_unit: la pedida, o el peso del padre (saco=25kg → 25
+	// para dosificar kg/g del contenedor — sin eso el precio/kg divide mal)
 	quantityPerUnit := req.QuantityPerUnit
+	if quantityPerUnit == 0 && productID != nil {
+		_ = eh.Pool.QueryRow(r.Context(), `SELECT COALESCE(weight_kg,0) FROM products WHERE id = $1`, *productID).Scan(&quantityPerUnit)
+	}
 	if quantityPerUnit == 0 {
 		quantityPerUnit = 1
 	}

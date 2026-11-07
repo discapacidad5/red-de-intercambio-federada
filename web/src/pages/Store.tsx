@@ -705,7 +705,7 @@ export default function Store() {
                           <p className="text-xs font-bold text-gray-800 leading-tight line-clamp-2">{p.name}</p>
                           <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{p.category || 'sin categoría'}</p>
                           <p className="text-xs font-bold text-trueque-700 mt-1">
-                            {p.price_trueque || p.price} {currency}/{p.unit || 'unidad'}
+                            {fmtTQ(p.price_trueque || p.price || 0)} {currency}/{p.unit || 'unidad'}
                           </p>
                         </div>
                       </button>
@@ -724,7 +724,7 @@ export default function Store() {
                       )}
                       <div>
                         <p className="font-bold text-emerald-900">{sel.name}</p>
-                        <p className="text-xs text-gray-600">{sel.price_trueque || sel.price} {currency}/{sel.unit || 'unidad'}</p>
+                        <p className="text-xs text-gray-600">{fmtTQ(sel.price_trueque || sel.price || 0)} {currency}/{sel.unit || 'unidad'}</p>
                       </div>
                     </div>
                     <div>
