@@ -816,6 +816,27 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
 		  AND COALESCE(si.category, '') <> ''
 		  AND si.is_active = true
+		UNION
+		-- Categorías de servicios universales (Trabajo etc.) — la tienda las
+		-- tiene siempre, igual que el POS; el dueño decide su visibilidad
+		SELECT NULL, p.category, 'universal', COALESCE(sc3.show_in_pos, true)
+		FROM products p
+		LEFT JOIN store_categories sc3
+		       ON sc3.owner_id = $1 AND sc3.name = p.category
+		WHERE COALESCE(p.is_universal_service, false) = true
+		  AND COALESCE(p.category, '') <> ''
+		UNION
+		-- Categorías de los productos del catálogo de los items (heredadas —
+		-- el item puede tener si.category vacío pero el producto padre tiene una)
+		SELECT NULL, p2.category, 'items', true
+		FROM store_items si2
+		JOIN products p2 ON p2.id = si2.product_id
+		WHERE (si2.owner_id = $1 OR si2.owner_id IS NULL
+		   OR si2.owner_id IN (SELECT organization_id FROM organization_board_members
+		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+		  AND COALESCE(si2.category, '') = ''
+		  AND COALESCE(p2.category, '') <> ''
+		  AND si2.is_active = true
 		ORDER BY name`, userID,
 	)
 	if err != nil {
