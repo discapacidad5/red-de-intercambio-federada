@@ -607,7 +607,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			WHERE si.owner_id = $1
 			  AND si.is_active = true
 			  AND COALESCE(si.show_in_pos, true) = true
-			  AND (si.is_service = true OR si.stock > 0)
+			  AND (si.is_service = true OR si.stock > 0 OR COALESCE(p.is_universal_service, false) = true)
 			  AND (p.id IS NULL OR (p.is_approved = true AND COALESCE(p.is_allowed, true) = true))
 			ORDER BY si.is_service ASC, si.product_name ASC`, sellerID)
 		if err == nil {
