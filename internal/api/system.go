@@ -138,6 +138,7 @@ func (h *SystemHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
 	// Allowlist de productos (permitir / no permitir)
 	r.With(am.RequirePermission("products.manage")).Post("/api/products/{id}/allow", h.allowProduct)
 	r.With(am.RequirePermission("products.manage")).Post("/api/products/{id}/disallow", h.disallowProduct)
+	r.With(am.RequireAuth).Post("/api/products/{id}/incorporate", h.incorporateProduct)
 	r.With(am.RequireAuth).Get("/api/products/allowed", h.listAllowedProducts)
 	r.With(am.RequireAuth).Get("/api/products/disallowed", h.listDisallowedProducts)
 
@@ -941,6 +942,24 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 	}
 	query += " WHERE " + strings.Join(whereParts, " AND ")
 	query += ` ORDER BY is_approved DESC, node_domain, COALESCE(parent_category,''), COALESCE(category,''), name LIMIT 1000`
+
+	// Set de product_codes que ya existen en el nodo local — permite a la UI
+	// marcar cuáles productos federados ya fueron incorporados ("En mi nodo").
+	inNodeCodes := map[string]bool{}
+	if codeRows, cErr := h.Pool.Query(r.Context(),
+		`SELECT DISTINCT product_code FROM products WHERE node_domain = $1 AND product_code IS NOT NULL AND product_code <> ''`,
+		requestNodeDomain); cErr == nil {
+		func() {
+			defer codeRows.Close()
+			for codeRows.Next() {
+				var c string
+				if codeRows.Scan(&c) == nil {
+					inNodeCodes[c] = true
+				}
+			}
+		}()
+	}
+
 	rows, err := h.Pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeJSON(w, 200, []interface{}{})
@@ -1012,6 +1031,7 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 			"catalog_key":       catalogKey,
 			"item_type":         itemType,
 			"is_federation":     nodeDomain == "__FEDERATION__",
+			"in_my_node":        nodeDomain != "__FEDERATION__" || (pcode != "" && inNodeCodes[pcode]),
 		})
 	}
 	localizeEntityMaps(r.Context(), h.Pool, products, "product", lang, fallbackLang, "name", "description", "badge", "unit")
@@ -5535,6 +5555,90 @@ func (h *SystemHandler) deleteGovernanceRule(w http.ResponseWriter, r *http.Requ
 }
 
 // ===== ALLOWLIST DE PRODUCTOS (permitir / no permitir) =====
+
+// incorporateProduct copia un producto del catálogo federado al nodo local
+// como PENDIENTE de aprobación (is_approved=false). Así el dueño del nodo
+// incorpora del catálogo global → aparece en "Pendientes" → al aprobarlo
+// pasa a "Mi Nodo" y se puede vender en tienda/POS.
+// Dedup por product_code: si el nodo ya tiene ese producto, no duplica.
+func (h *SystemHandler) incorporateProduct(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, 401, "not authenticated")
+		return
+	}
+	productID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, 400, "invalid product id")
+		return
+	}
+	nodeDomain := db.ResolveNodeDomain(r.Context(), h.Pool, r.Header.Get("X-Node-Domain"), h.nodeDomain)
+
+	// Producto origen (normalmente __FEDERATION__ u otro nodo)
+	var src struct {
+		Name, Desc, ParentCat, Cat, SubCat, Unit, Origin, BaseUnit, ItemType string
+		Price, PricePerKg, WeightKg                                         float64
+		Badge, ImageURL, ThumbURL, ProductCode                              *string
+		NodeDomain                                                          string
+	}
+	err = h.Pool.QueryRow(r.Context(), `
+		SELECT name, COALESCE(description,''), COALESCE(parent_category,''),
+		       COALESCE(category,''), COALESCE(subcategory,''), COALESCE(unit,'unidad'),
+		       price_per_unit, COALESCE(price_per_kg,0), COALESCE(weight_kg,0),
+		       COALESCE(base_unit,'kg'), origin, badge, image_url,
+		       COALESCE(image_thumb_url,''), product_code, node_domain,
+		       COALESCE(item_type,'product')
+		FROM products WHERE id = $1 AND is_hidden = false`, productID,
+	).Scan(&src.Name, &src.Desc, &src.ParentCat, &src.Cat, &src.SubCat, &src.Unit,
+		&src.Price, &src.PricePerKg, &src.WeightKg, &src.BaseUnit, &src.Origin,
+		&src.Badge, &src.ImageURL, &src.ThumbURL, &src.ProductCode, &src.NodeDomain, &src.ItemType)
+	if err != nil {
+		writeError(w, 404, "producto no encontrado")
+		return
+	}
+	if src.NodeDomain == nodeDomain {
+		writeError(w, 400, "este producto ya pertenece a tu nodo")
+		return
+	}
+
+	// Dedupe: si el nodo ya tiene un producto con el mismo código, no duplicar
+	if src.ProductCode != nil && *src.ProductCode != "" {
+		var exists bool
+		_ = h.Pool.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM products WHERE node_domain = $1 AND product_code = $2)`,
+			nodeDomain, *src.ProductCode,
+		).Scan(&exists)
+		if exists {
+			writeJSON(w, 200, map[string]interface{}{"status": "already", "message": "Este producto ya está en tu nodo"})
+			return
+		}
+	}
+
+	var newID uuid.UUID
+	err = h.Pool.QueryRow(r.Context(), `
+		INSERT INTO products (
+			node_domain, name, description, parent_category, category, subcategory,
+			unit, price_per_unit, price_per_kg, weight_kg, base_unit, origin, badge,
+			image_url, image_thumb_url, product_code, source_node,
+			is_approved, is_system, is_hidden, is_composite, item_type, is_active
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+		          false, false, false, false, $18, true)
+		RETURNING id`,
+		nodeDomain, src.Name, src.Desc, src.ParentCat, src.Cat, src.SubCat,
+		src.Unit, src.Price, src.PricePerKg, src.WeightKg, src.BaseUnit, src.Origin,
+		src.Badge, src.ImageURL, src.ThumbURL, src.ProductCode, src.NodeDomain, src.ItemType,
+	).Scan(&newID)
+	if err != nil {
+		writeError(w, 500, "error incorporando producto: "+err.Error())
+		return
+	}
+	_ = userID
+	writeJSON(w, 201, map[string]interface{}{
+		"status":  "incorporated",
+		"id":      newID.String(),
+		"message": "Producto incorporado — ahora aparece en Pendientes de tu nodo",
+	})
+}
 
 // allowProduct marca un producto como permitido en el nodo actual.
 // Para productos locales: actualiza is_allowed = true.

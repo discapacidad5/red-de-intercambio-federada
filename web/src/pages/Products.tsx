@@ -98,6 +98,8 @@ export default function Products() {
   const [apiOffset, setApiOffset] = useState(0)
   const [fedNodes, setFedNodes] = useState<any[]>([])
   const [fedNodeFilter, setFedNodeFilter] = useState('')
+  // Sub-filtro de la pestaña Federación: todos / ya en mi nodo / no en mi nodo
+  const [fedNodeTab, setFedNodeTab] = useState<'all' | 'in' | 'out'>('all')
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   // Nueva: busqueda por nombre
@@ -384,6 +386,18 @@ export default function Products() {
     }
   }
 
+  // Incorporar producto federado al nodo: lo copia como PENDIENTE —
+  // luego se aprueba en la pestana Pendientes y pasa a Mi Nodo.
+  const incorporateProduct = async (p: any) => {
+    try {
+      await api.post(`/products/${p.id}/incorporate`, {})
+      setSuccess(t('success_incorporated', '"{{name}}" incorporado — ahora aparece en Pendientes de tu nodo.', { name: p.name }))
+      loadFederated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error_incorporate', 'Error al incorporar producto'))
+    }
+  }
+
   // Permitir producto en el nodo
   const allowProduct = async (p: any) => {
     try {
@@ -457,6 +471,11 @@ export default function Products() {
   const subcategories = filterCategory ? Array.from(categorySubMap[filterCategory] || []).sort() as string[] : []
 
   const filteredProducts = products.filter((p) => {
+    // Sub-filtro de la pestaña Federación: en mi nodo / no en mi nodo
+    if (activeTab === 'federated') {
+      if (fedNodeTab === 'in' && p.in_my_node !== true) return false
+      if (fedNodeTab === 'out' && p.in_my_node !== false) return false
+    }
     if (filterParentCategory && p.parent_category !== filterParentCategory) return false
     if (filterCategory && p.category !== filterCategory) return false
     if (filterSubcategory && p.subcategory !== filterSubcategory) return false
@@ -1065,6 +1084,28 @@ export default function Products() {
             ))}
           </select>
         )}
+        {/* Sub-filtro: todos / en mi nodo / no en mi nodo */}
+        {activeTab === 'federated' && (
+          <div className="flex gap-2">
+            {([
+              { key: 'all', label: t('fed_tab_all', 'Todos') },
+              { key: 'in', label: t('fed_tab_in_node', 'En mi nodo') },
+              { key: 'out', label: t('fed_tab_not_in_node', 'No están en mi nodo') },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setFedNodeTab(opt.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                  fedNodeTab === opt.key
+                    ? 'bg-trueque-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Proponer nuevo item al catalogo federado (votacion de la federacion) */}
         {activeTab === 'federated' && canManage && (
           <button
@@ -1438,6 +1479,21 @@ export default function Products() {
                               >
                                 <X size={10} /> {t('disallow', 'No Permitir')}
                               </button>
+                            )}
+                            {/* Incorporar al nodo: producto federado que aun no existe en el nodo */}
+                            {p.is_federation && p.in_my_node === false && (
+                              <button
+                                onClick={() => incorporateProduct(p)}
+                                className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-200 transition flex items-center gap-1"
+                                title={t('tooltip_incorporate', 'Incorporar este producto a mi nodo (queda pendiente de aprobacion)')}
+                              >
+                                <Plus size={10} /> {t('incorporate', 'Agregar a mi nodo')}
+                              </button>
+                            )}
+                            {p.is_federation && p.in_my_node === true && (
+                              <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Check size={10} /> {t('in_my_node', 'En mi nodo')}
+                              </span>
                             )}
                             {/* Items del catalogo federado: cambios por votacion de la federacion */}
                             {p.is_federation && canManage && (
