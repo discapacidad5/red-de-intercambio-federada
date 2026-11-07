@@ -621,7 +621,9 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			LEFT JOIN products src ON src.product_code = p.product_code
 			                       AND src.node_domain = '__FEDERATION__'
 			                       AND src.id <> p.id
-			WHERE (si.owner_id = $1 OR si.owner_id IS NULL)
+			WHERE (si.owner_id = $1 OR si.owner_id IS NULL
+			  OR EXISTS(SELECT 1 FROM users u
+			    WHERE u.id = $1 AND u.is_super_admin = true AND u.super_admin_enabled = true))
 			  AND si.is_active = true
 			  AND COALESCE(si.show_in_pos, true) = true
 			  AND (si.is_service = true OR si.stock > 0 OR COALESCE(p.is_universal_service, false) = true)
