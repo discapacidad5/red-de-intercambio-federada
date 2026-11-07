@@ -1053,6 +1053,7 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			updated_at      = NOW()
 		WHERE id = $13 AND (
 			owner_id = $14 OR owner_id IS NULL
+			OR EXISTS(SELECT 1 FROM users WHERE id = $14 AND is_super_admin = true AND super_admin_enabled = true)
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $14 AND COALESCE(obm.is_active, true) = true)
@@ -1100,6 +1101,7 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 		UPDATE store_items SET category = $1, parent_category = $2, subcategory = $3, updated_at = NOW()
 		WHERE id = $4 AND (
 			owner_id = $5 OR owner_id IS NULL
+			OR EXISTS(SELECT 1 FROM users WHERE id = $5 AND is_super_admin = true AND super_admin_enabled = true)
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $5 AND COALESCE(obm.is_active, true) = true)
@@ -1143,6 +1145,7 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()
 		WHERE id = $2 AND (
 			owner_id = $3 OR owner_id IS NULL
+			OR EXISTS(SELECT 1 FROM users WHERE id = $3 AND is_super_admin = true AND super_admin_enabled = true)
 			OR EXISTS(
 				SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
