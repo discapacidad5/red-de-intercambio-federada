@@ -1399,7 +1399,12 @@ export default function Store() {
                                   ] : base === 'm' ? [
                                     { unit: 'm', base: 1 }, { unit: 'cm', base: 0.01 }, { unit: 'pulgada', base: 0.0254 },
                                     { unit: 'pie', base: 0.3048 },
-                                  ] : [{ unit: unit, base: 1 }]
+                                  ] : [
+                                    // Unidades contables (docena=12, par=2, unidad=1)
+                                    { unit: 'unidad', base: 1 }, { unit: 'par', base: 2 },
+                                    { unit: 'media docena', base: 6 }, { unit: 'docena', base: 12 },
+                                    { unit: unit, base: item.quantity_per_unit || 1 },
+                                  ]
                                 return (
                                   <div className="flex gap-1.5 flex-wrap">
                                     {opts.map((o) => {
