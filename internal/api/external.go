@@ -71,6 +71,8 @@ func (eh *ExternalHandler) RegisterRoutesWithAuth(r chi.Router, am *AuthMiddlewa
 	}
 	// Visibilidad en el POS: el dueno decide que items aparecen en su punto de venta
 	r.With(am.RequireAuth).Put("/api/store/items/{id}/pos-visibility", eh.togglePosVisibility)
+	// Categoria del item: el dueno organiza su tienda en categorias que el POS replica
+	r.With(am.RequireAuth).Put("/api/store/items/{id}/category", eh.updateItemCategory)
 	r.Post("/api/store/purchase", eh.purchase)
 	r.Post("/api/store/composite", eh.addCompositeItem)
 	r.Get("/api/store/composite/{id}/composition", eh.getComposition)
@@ -774,6 +776,49 @@ func (eh *ExternalHandler) deactivateStoreItem(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "deactivated"})
+}
+
+// updateItemCategory cambia la categoría de un item — el dueño organiza su
+// tienda en categorías propias que el POS replica automáticamente.
+func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	itemID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, 400, "invalid item id")
+		return
+	}
+	var req struct {
+		Category       string `json:"category"`
+		ParentCategory string `json:"parent_category"`
+		Subcategory    string `json:"subcategory"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	res, err := eh.Pool.Exec(r.Context(), `
+		UPDATE store_items SET category = $1, parent_category = $2, subcategory = $3, updated_at = NOW()
+		WHERE id = $4 AND (
+			owner_id = $5
+			OR EXISTS(SELECT 1 FROM organization_board_members obm
+				WHERE obm.organization_id = store_items.owner_id
+				  AND obm.user_id = $5 AND COALESCE(obm.is_active, true) = true)
+		)`,
+		strings.TrimSpace(req.Category), strings.TrimSpace(req.ParentCategory), strings.TrimSpace(req.Subcategory), itemID, userID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to update category")
+		return
+	}
+	if res.RowsAffected() == 0 {
+		writeError(w, 404, "item not found or you are not the owner")
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"status": "updated"})
 }
 
 // togglePosVisibility marca si un item de la tienda del dueño aparece en el

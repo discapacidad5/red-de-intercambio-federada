@@ -1118,8 +1118,23 @@ export default function Store() {
                       )}
                     </div>
                     <p className="text-sm text-gray-600">{item.description || product?.description}</p>
-                    <div className="flex gap-1.5 flex-wrap mt-1">
-                      {item.category && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded inline-block">{item.category}</span>}
+                    <div className="flex gap-1.5 flex-wrap mt-1 items-center">
+                      {/* Categoría editable — el POS replica estas categorías */}
+                      <input
+                        type="text"
+                        className="input !py-0 !px-1.5 text-xs w-28 !bg-gray-100"
+                        placeholder={t('store_category_ph', 'Categoría...')}
+                        defaultValue={item.category || ''}
+                        onBlur={(e) => {
+                          const cat = e.target.value.trim()
+                          if (cat !== (item.category || '')) {
+                            api.put(`/store/items/${item.id}/category`, { category: cat, parent_category: item.parent_category || '', subcategory: item.subcategory || '' })
+                              .then(() => setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, category: cat } : i)))
+                              .catch((err: any) => setError(err.message || 'Error'))
+                          }
+                        }}
+                        title={t('store_category_hint', 'Categoría del producto — el POS la replica')}
+                      />
                       {item.is_universal_service && (
                         <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
                           {t('store_universal_service_badge', 'Servicio Universal (Todos)')}
