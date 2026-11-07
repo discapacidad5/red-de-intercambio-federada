@@ -46,6 +46,9 @@ export default function Store() {
   const [catAddSaving, setCatAddSaving] = useState(false)
   const [stockInputs, setStockInputs] = useState<Record<string, string>>({})
   const [stockSaving, setStockSaving] = useState<string | null>(null)
+  const [editingItem, setEditingItem] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<any>({})
+  const [editSaving, setEditSaving] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -1199,6 +1202,24 @@ export default function Store() {
                       )}
                     </div>
                     <div className="flex gap-2 mt-3 flex-wrap">
+                      <button
+                        onClick={() => {
+                          setEditingItem(editingItem === item.id ? null : item.id)
+                          setEditForm({
+                            product_name: item.product_name || product?.name || '',
+                            description: item.description || product?.description || '',
+                            category: item.category || '',
+                            unit: item.unit || product?.unit || 'unidad',
+                            quantity_per_unit: item.quantity_per_unit || 1,
+                            price_trueque: displayPrice,
+                            stock: item.stock || 0,
+                            is_service: !!item.is_service,
+                          })
+                        }}
+                        className="text-[10px] font-bold text-blue-700 bg-white border border-blue-500 px-2 py-0.5 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+                      >
+                        ✏️ {t('store_edit', 'Editar')}
+                      </button>
                       <button onClick={() => openTagModal(item)} className="btn-secondary flex-1 flex items-center justify-center gap-1.5 text-xs">
                         <QrCode size={14} /> {t('store_tag_barcode_btn', 'Barra / QR / NFC')}
                       </button>
@@ -1216,6 +1237,55 @@ export default function Store() {
                         <button onClick={() => removeItem(item.id)} className="btn-secondary text-red-600"><Trash2 size={16} /></button>
                       )}
                     </div>
+                    {/* Formulario de edición del item */}
+                    {editingItem === item.id && (
+                      <div className="mt-3 border-t border-gray-200 pt-3 space-y-2 text-xs">
+                        <div>
+                          <label className="label !text-[10px]">{t('store_edit_cat', 'Categoría')}</label>
+                          <input className="input !py-0.5 text-xs" value={editForm.category} onChange={(e) => setEditForm((f: any) => ({ ...f, category: e.target.value }))} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="label !text-[10px]">{t('store_edit_unit', 'Unidad (saco, kg, L, unidad)')}</label>
+                            <input className="input !py-0.5 text-xs" value={editForm.unit} onChange={(e) => setEditForm((f: any) => ({ ...f, unit: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label className="label !text-[10px]">{t('store_edit_qty_unit', 'Cantidad por unidad (kg por saco)')}</label>
+                            <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.quantity_per_unit} onChange={(e) => setEditForm((f: any) => ({ ...f, quantity_per_unit: parseFloat(e.target.value) || 1 }))} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="label !text-[10px]">{t('store_edit_price', 'Precio TQ')}</label>
+                            <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.price_trueque} onChange={(e) => setEditForm((f: any) => ({ ...f, price_trueque: parseFloat(e.target.value) || 0 }))} />
+                          </div>
+                          <div>
+                            <label className="label !text-[10px]">{t('store_edit_stock', 'Stock')}</label>
+                            <input type="number" className="input !py-0.5 text-xs" value={editForm.stock} onChange={(e) => setEditForm((f: any) => ({ ...f, stock: parseInt(e.target.value) || 0 }))} />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer">
+                          <input type="checkbox" checked={!!editForm.is_service} onChange={(e) => setEditForm((f: any) => ({ ...f, is_service: e.target.checked }))} />
+                          {t('store_edit_unlimited', 'Ilimitado (no contar cantidad — vende sin descontar)')}
+                        </label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              setEditSaving(true)
+                              try {
+                                await api.put(`/store/items/${item.id}`, editForm)
+                                setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, ...editForm } : i))
+                                setEditingItem(null)
+                                setSuccessMsg(t('store_item_updated', 'Producto actualizado'))
+                              } catch (e: any) { setError(e.message || 'Error') } finally { setEditSaving(false) }
+                            }}
+                            disabled={editSaving}
+                            className="btn-primary text-xs flex-1"
+                          >{editSaving ? t('common:loading') : t('store_save', 'Guardar')}</button>
+                          <button onClick={() => setEditingItem(null)} className="btn-secondary text-xs">{t('common:cancel', 'Cancelar')}</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}

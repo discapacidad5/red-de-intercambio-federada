@@ -73,6 +73,9 @@ func (eh *ExternalHandler) RegisterRoutesWithAuth(r chi.Router, am *AuthMiddlewa
 	r.With(am.RequireAuth).Put("/api/store/items/{id}/pos-visibility", eh.togglePosVisibility)
 	// Categoria del item: el dueno organiza su tienda en categorias que el POS replica
 	r.With(am.RequireAuth).Put("/api/store/items/{id}/category", eh.updateItemCategory)
+	// Edicion completa del item: unidad, cantidad por unidad (divisibilidad),
+	// precio, modo de stock (contable/ilimitado), nombre/descripcion
+	r.With(am.RequireAuth).Put("/api/store/items/{id}", eh.updateStoreItem)
 	r.Post("/api/store/purchase", eh.purchase)
 	r.Post("/api/store/composite", eh.addCompositeItem)
 	r.Get("/api/store/composite/{id}/composition", eh.getComposition)
@@ -776,6 +779,73 @@ func (eh *ExternalHandler) deactivateStoreItem(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "deactivated"})
+}
+
+// updateStoreItem edita un item de la tienda: nombre, categoría, unidad,
+// cantidad por unidad (ej: saco = 20 kg → vender 1 kg divide el precio),
+// precio, stock y modo ilimitado (is_service). Solo el dueño o board.
+func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Request) {
+	userID, err := eh.Auth.GetUserID(r)
+	if err != nil || userID == uuid.Nil {
+		writeError(w, 401, "authentication required")
+		return
+	}
+	itemID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, 400, "invalid item id")
+		return
+	}
+	var req struct {
+		ProductName     string   `json:"product_name"`
+		Description     string   `json:"description"`
+		Category        string   `json:"category"`
+		ParentCategory  string   `json:"parent_category"`
+		Subcategory     string   `json:"subcategory"`
+		Unit            string   `json:"unit"`
+		QuantityPerUnit *float64 `json:"quantity_per_unit"`
+		PriceTrueque    *float64 `json:"price_trueque"`
+		ExtraCosts      *float64 `json:"extra_costs"`
+		Stock           *int64   `json:"stock"`
+		IsService       *bool    `json:"is_service"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, 400, "invalid request body")
+		return
+	}
+	res, err := eh.Pool.Exec(r.Context(), `
+		UPDATE store_items SET
+			product_name    = COALESCE(NULLIF($1,''), product_name),
+			description     = COALESCE(NULLIF($2,''), description),
+			category        = $3,
+			parent_category = COALESCE(NULLIF($4,''), parent_category),
+			subcategory     = COALESCE(NULLIF($5,''), subcategory),
+			unit            = COALESCE(NULLIF($6,''), unit),
+			quantity_per_unit = COALESCE($7, quantity_per_unit),
+			price_trueque   = COALESCE($8, price_trueque),
+			extra_costs     = COALESCE($9, extra_costs),
+			stock           = COALESCE($10, stock),
+			is_service      = COALESCE($11, is_service),
+			updated_at      = NOW()
+		WHERE id = $12 AND (
+			owner_id = $13
+			OR EXISTS(SELECT 1 FROM organization_board_members obm
+				WHERE obm.organization_id = store_items.owner_id
+				  AND obm.user_id = $13 AND COALESCE(obm.is_active, true) = true)
+		)`,
+		req.ProductName, req.Description, strings.TrimSpace(req.Category),
+		req.ParentCategory, req.Subcategory, req.Unit,
+		req.QuantityPerUnit, req.PriceTrueque, req.ExtraCosts, req.Stock, req.IsService,
+		itemID, userID,
+	)
+	if err != nil {
+		writeError(w, 500, "failed to update item: "+err.Error())
+		return
+	}
+	if res.RowsAffected() == 0 {
+		writeError(w, 404, "item not found or you are not the owner")
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"status": "updated"})
 }
 
 // updateItemCategory cambia la categoría de un item — el dueño organiza su
