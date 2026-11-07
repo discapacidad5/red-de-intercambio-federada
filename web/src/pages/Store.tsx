@@ -52,6 +52,7 @@ export default function Store() {
   const [storeCats, setStoreCats] = useState<any[]>([])
   const [showCats, setShowCats] = useState(false)
   const [newCatName, setNewCatName] = useState('')
+  const [catFilter, setCatFilter] = useState('')
   const [showHelp, setShowHelp] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -1156,14 +1157,36 @@ export default function Store() {
             </div>
           )}
 
-          {items.length === 0 && !showForm ? (
+          {/* Filtro por categoría — chips de tus categorías creadas */}
+          {storeCats.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap items-center">
+              <span className="text-xs font-bold text-gray-500">{t('store_filter_cat', 'Filtrar:')}</span>
+              <button
+                onClick={() => setCatFilter('')}
+                className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                  catFilter === '' ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
+                }`}
+              >{t('store_filter_all', 'Todas')}</button>
+              {storeCats.map((c: any) => (
+                <button
+                  key={c.id}
+                  onClick={() => setCatFilter(catFilter === c.name ? '' : c.name)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                    catFilter === c.name ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
+                  }`}
+                >{c.name}</button>
+              ))}
+            </div>
+          )}
+
+          {items.filter((i: any) => !catFilter || i.category === catFilter).length === 0 && !showForm ? (
             <div className="card text-center text-gray-500 py-8">
               <p>{t('store_empty', 'Tu tienda esta vacia.')}</p>
               <p className="text-xs mt-2">{t('store_empty_hint', 'Agrega productos del registro global con el boton de arriba.')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {items.map((item, i) => {
+              {items.filter((i: any) => !catFilter || i.category === catFilter).map((item, i) => {
                 const product = products.find((p) => p.id === item.product_id)
                 const displayPrice = item.final_price || item.price_trueque || product?.price_trueque || 0
                 const baseP = item.base_price || item.price_trueque || product?.price_trueque || 0
