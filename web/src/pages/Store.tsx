@@ -1379,12 +1379,57 @@ export default function Store() {
                               {t('store_catalog_locked', 'Producto del catálogo — precio y unidad heredados (no editables)')}
                             </p>
                             <p className="text-[10px] text-gray-600">
-                              {product?.name || item.product_name} · {displayPrice} {currency}/{unit}
+                              {product?.name || item.product_name} · catálogo: {item.price_per_kg > 0 ? `${item.price_per_kg} ${currency}/${item.base_unit || 'kg'}` : `${displayPrice} ${currency}/${unit}`}
                             </p>
+                            {/* Unidad de venta: elige cómo vendes — el precio se calcula solo */}
                             <div>
-                              <label className="label !text-[10px]">{t('store_edit_qty_unit', 'Cantidad por unidad (kg por saco — para dosificar)')}</label>
-                              <input type="number" step="0.01" className="input !py-0.5 text-xs" value={editForm.quantity_per_unit} onChange={(e) => setEditForm((f: any) => ({ ...f, quantity_per_unit: parseFloat(e.target.value) || 1 }))} />
-                              <p className="text-[9px] text-gray-500 mt-0.5">{t('store_dosage_hint', 'Ej: saco de 20 kg → 20. Al vender por kilo el precio se divide solo.')}</p>
+                              <label className="label !text-[10px]">{t('store_sell_unit', '¿Cómo lo vendes?')}</label>
+                              {(() => {
+                                const base = (item.base_unit || 'kg').toLowerCase()
+                                const wKg = item.weight_kg || 0
+                                const ppk = item.price_per_kg || 0
+                                const opts: {unit: string, base: number}[] =
+                                  base === 'kg' ? [
+                                    ...(wKg > 0 ? [{ unit: 'saco', base: wKg }] : [{ unit: 'saco', base: 25 }]),
+                                    { unit: 'kg', base: 1 }, { unit: 'g', base: 0.001 },
+                                    { unit: 'lb', base: 0.4536 }, { unit: 'oz', base: 0.02835 },
+                                  ] : base === 'l' || base === 'litro' ? [
+                                    { unit: 'L', base: 1 }, { unit: 'mL', base: 0.001 }, { unit: 'cc', base: 0.001 },
+                                    { unit: 'galón', base: 3.78541 },
+                                  ] : base === 'm' ? [
+                                    { unit: 'm', base: 1 }, { unit: 'cm', base: 0.01 }, { unit: 'pulgada', base: 0.0254 },
+                                    { unit: 'pie', base: 0.3048 },
+                                  ] : [{ unit: unit, base: 1 }]
+                                return (
+                                  <div className="flex gap-1.5 flex-wrap">
+                                    {opts.map((o) => {
+                                      const sel = editForm.unit === o.unit
+                                      const derivedPrice = ppk > 0 ? +(ppk * o.base).toFixed(4) : 0
+                                      return (
+                                        <button
+                                          key={o.unit}
+                                          type="button"
+                                          onClick={() => setEditForm((f: any) => ({
+                                            ...f, unit: o.unit, quantity_per_unit: o.base,
+                                            price_trueque: derivedPrice > 0 ? derivedPrice : f.price_trueque,
+                                          }))}
+                                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
+                                            sel ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400'
+                                          }`}
+                                        >
+                                          {o.unit}{o.base !== 1 ? ` (${o.base} ${base})` : ''}
+                                          {derivedPrice > 0 && <span className="block text-[8px] opacity-80">→ {derivedPrice} {currency}</span>}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                )
+                              })()}
+                              {editForm.unit && item.price_per_kg > 0 && (
+                                <p className="text-[10px] font-bold text-emerald-800 mt-1">
+                                  {t('store_computed_price', 'Precio calculado:')} {editForm.price_trueque} {currency}/{editForm.unit}
+                                </p>
+                              )}
                             </div>
                           </div>
                         ) : (

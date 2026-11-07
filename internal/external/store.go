@@ -43,6 +43,10 @@ type StoreItem struct {
 	IsService          bool       `json:"is_service"`
 	IsUniversalService bool       `json:"is_universal_service,omitempty"`
 	ShowInPos          bool       `json:"show_in_pos"`
+	// Medida del catálogo padre — para dosificar (saco=X kg → precio/kg auto)
+	PricePerKg         float64    `json:"price_per_kg"`
+	WeightKg           float64    `json:"weight_kg"`
+	BaseUnit           string     `json:"base_unit"`
 	IsActive           bool       `json:"is_active"`
 	ExternalOpID       *uuid.UUID `json:"external_op_id"`
 	ImageURL           string     `json:"image_url"`
@@ -123,7 +127,10 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 			  si.stock, COALESCE(si.is_service, false), COALESCE(si.show_in_pos, true), si.is_active, si.external_op_id, si.created_at, si.updated_at,
 			  COALESCE(u.username, '') as owner_name,
 			  COALESCE(p.image_url, '') as image_url,
-			  COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, '')) as image_icon_url
+			  COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, '')) as image_icon_url,
+			  COALESCE(p.price_per_kg, 0) as price_per_kg,
+			  COALESCE(p.weight_kg, 0) as weight_kg,
+			  COALESCE(p.base_unit, 'kg') as base_unit
 			  FROM store_items si
 			  LEFT JOIN users u ON si.owner_id = u.id
 			  LEFT JOIN products p ON si.product_id = p.id
@@ -148,7 +155,8 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 		err := rows.Scan(&item.ID, &item.NodeDomain, &item.OwnerID, &item.ProductID, &item.ItemCode, &item.ProductName, &item.Description,
 			&item.ParentCategory, &item.Category, &item.Subcategory, &item.Origin, &item.Unit, &item.QuantityPerUnit, &item.PriceTrueque,
 			&item.BasePrice, &item.ExtraCosts, &item.FinalPrice, &item.ExtraDescription,
-			&item.Stock, &item.IsService, &item.ShowInPos, &item.IsActive, &item.ExternalOpID, &item.CreatedAt, &item.UpdatedAt, &item.OwnerName, &item.ImageURL, &item.ImageIconURL)
+			&item.Stock, &item.IsService, &item.ShowInPos, &item.IsActive, &item.ExternalOpID, &item.CreatedAt, &item.UpdatedAt, &item.OwnerName, &item.ImageURL, &item.ImageIconURL,
+			&item.PricePerKg, &item.WeightKg, &item.BaseUnit)
 		if err != nil {
 			return nil, fmt.Errorf("scanning store item: %w", err)
 		}
