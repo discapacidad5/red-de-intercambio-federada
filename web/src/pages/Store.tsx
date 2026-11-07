@@ -39,6 +39,11 @@ export default function Store() {
   const [products, setProducts] = useState<any[]>([])
   const [allStores, setAllStores] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [showCatalogAdd, setShowCatalogAdd] = useState(false)
+  const [catAddSearch, setCatAddSearch] = useState('')
+  const [catAddProductId, setCatAddProductId] = useState('')
+  const [catAddStock, setCatAddStock] = useState('')
+  const [catAddSaving, setCatAddSaving] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -366,6 +371,29 @@ export default function Store() {
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))]
   const storeCategories = [...new Set(allStores.map((s) => s.parent_category || s.category).filter(Boolean))].sort()
 
+  // Agregar producto del catálogo existente — tal como está en el catálogo,
+  // sin crear ni modificar: solo elige el producto y cuánto vendes (stock).
+  const handleCatalogAdd = async () => {
+    if (!catAddProductId) return
+    setCatAddSaving(true)
+    try {
+      await api.post('/store/items', {
+        product_id: catAddProductId,
+        stock: catAddStock === '' ? 0 : parseInt(catAddStock) || 0,
+      })
+      setCatAddProductId('')
+      setCatAddStock('')
+      setCatAddSearch('')
+      setShowCatalogAdd(false)
+      setSuccessMsg(t('store_catalog_added', 'Producto agregado del catálogo a tu tienda'))
+      load()
+    } catch (e: any) {
+      setError(e.message || 'Error agregando producto')
+    } finally {
+      setCatAddSaving(false)
+    }
+  }
+
   const addItem = async () => {
     setError('')
     if (!form.product_id) {
@@ -508,14 +536,72 @@ export default function Store() {
           <div className="flex justify-between items-center flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2"><StoreIcon size={18} />{t('store_my_personal_store', 'Mi Tienda Personal (Productos y Servicios)')}</h2>
             <div className="flex gap-2 flex-wrap">
+              <button onClick={() => { setShowCatalogAdd(!showCatalogAdd); setShowForm(false) }} className="btn-secondary flex items-center gap-2 text-sm">
+                <Package size={16} />{t('store_add_catalog_btn', 'Agregar del catálogo')}
+              </button>
               <button onClick={() => { setShowBasketBuilder(!showBasketBuilder); setSavedBasketTag(null) }} className="btn-secondary flex items-center gap-2 text-sm">
                 <QrCode size={16} />{t('store_basket_tag_btn', 'Etiqueta / QR de Canasta')}
               </button>
-              <button onClick={() => { setShowForm(!showForm); setFormMode('composite') }} className="btn-primary flex items-center gap-2"><Plus size={18} />{t('store_create_composite', 'Agregar Producto o Servicio')}</button>
+              <button onClick={() => { setShowForm(!showForm); setFormMode('composite'); setShowCatalogAdd(false) }} className="btn-primary flex items-center gap-2"><Plus size={18} />{t('store_create_composite', 'Agregar Producto o Servicio')}</button>
             </div>
           </div>
 
           {successMsg && <div className="text-emerald-700 text-sm bg-emerald-50 border border-emerald-200 p-3 rounded-lg">{successMsg}</div>}
+
+          {/* Agregar producto del catálogo existente — tal como está */}
+          {showCatalogAdd && (
+            <div className="card bg-emerald-50 border border-emerald-200 space-y-3">
+              <h3 className="font-semibold flex items-center gap-2 text-emerald-900">
+                <Package size={18} />{t('store_add_catalog_title', 'Agregar producto del catálogo')}
+              </h3>
+              <p className="text-xs text-emerald-700">
+                {t('store_add_catalog_desc', 'Elige un producto ya existente en el catálogo del nodo — se agrega tal como está, con su precio. Solo indica cuánto vendes.')}
+              </p>
+              <input
+                className="input"
+                placeholder={t('store_catalog_search', 'Buscar producto del catálogo...')}
+                value={catAddSearch}
+                onChange={(e) => setCatAddSearch(e.target.value)}
+              />
+              <select
+                className="input"
+                value={catAddProductId}
+                onChange={(e) => setCatAddProductId(e.target.value)}
+              >
+                <option value="">{t('store_select_product', 'Seleccionar producto...')}</option>
+                {products
+                  .filter((p: any) => !catAddSearch || p.name?.toLowerCase().includes(catAddSearch.toLowerCase()) || (p.description || '').toLowerCase().includes(catAddSearch.toLowerCase()))
+                  .map((p: any) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — {p.price_trueque || p.price} {currency}/{p.unit || 'unidad'} ({p.category || 'sin categoría'})
+                    </option>
+                  ))}
+              </select>
+              {catAddProductId && (() => {
+                const sel = products.find((p: any) => p.id === catAddProductId)
+                return sel ? (
+                  <div className="text-xs text-emerald-800 bg-white/60 rounded p-2">
+                    <strong>{sel.name}</strong> — {sel.description || 'sin descripción'} · {sel.price_trueque || sel.price} {currency}/{sel.unit || 'unidad'}
+                  </div>
+                ) : null
+              })()}
+              <div>
+                <label className="label">{t('store_catalog_stock', 'Cantidad que vendes (stock) — deja en 0 para servicios o ilimitado')}</label>
+                <input
+                  type="number" min={0} className="input" placeholder="Ej: 10"
+                  value={catAddStock}
+                  onChange={(e) => setCatAddStock(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={handleCatalogAdd}
+                disabled={!catAddProductId || catAddSaving}
+                className="btn-primary disabled:opacity-50"
+              >
+                {catAddSaving ? t('common:loading') : t('store_catalog_add_confirm', 'Agregar a mi tienda')}
+              </button>
+            </div>
+          )}
 
           {/* Constructor de Etiqueta / QR / NFC para una Canasta Completa */}
           {showBasketBuilder && (
