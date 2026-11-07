@@ -382,10 +382,14 @@ export default function Store() {
     const raw = stockInputs[item.id]
     if (raw === undefined || raw === '') return
     const qty = parseInt(raw) || 0
-    const newStock = mode === 'add' ? (item.stock || 0) + qty : qty
+    const current = item.stock || 0
+    // El endpoint aplica DELTA: Añadir → +qty (suma ingreso),
+    // Poner → qty - current (delta que deja el conteo en qty)
+    const delta = mode === 'add' ? qty : qty - current
+    const newStock = Math.max(0, current + delta)
     setStockSaving(item.id)
     try {
-      await api.put(`/store/items/${item.id}/stock`, { stock: newStock })
+      await api.put(`/store/items/${item.id}/stock`, { delta })
       setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, stock: newStock } : i))
       setStockInputs(prev => ({ ...prev, [item.id]: '' }))
     } catch (e: any) {
@@ -1185,18 +1189,22 @@ export default function Store() {
                               onClick={() => adjustStock(item, 'add')}
                               disabled={stockSaving === item.id}
                               className="text-[10px] font-bold text-emerald-700 bg-white border border-emerald-500 px-2 py-0.5 rounded-lg hover:bg-emerald-50 disabled:opacity-50"
-                              title={t('stock_add_hint', 'Sumar al stock actual (nueva cosecha/ingreso)')}
+                              title={t('stock_add_hint', '＋ Ingresar: SUMA al stock actual — nueva cosecha o ingreso. Ej: tienes 5, escribes 10 → quedan 15')}
                             >
-                              ＋ {t('stock_add', 'Añadir')}
+                              ＋ {t('stock_add', 'Ingresar')}
                             </button>
                             <button
                               onClick={() => adjustStock(item, 'set')}
                               disabled={stockSaving === item.id}
                               className="text-[10px] font-bold text-blue-700 bg-white border border-blue-500 px-2 py-0.5 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-                              title={t('stock_set_hint', 'Fijar el conteo de inventario')}
+                              title={t('stock_set_hint', '✎ Contar: FIJA el stock al número escrito — inventario físico. Ej: tienes 5, escribes 10 → quedan 10')}
                             >
-                              ✎ {t('stock_set', 'Poner')}
+                              ✎ {t('stock_set', 'Contar')}
                             </button>
+                            <span
+                              className="text-[10px] text-gray-400 cursor-help"
+                              title={t('stock_help', '＋ Ingresar suma al stock (nueva cosecha). ✎ Contar fija el total (inventario).')}
+                            >?</span>
                           </div>
                         </div>
                       )}
