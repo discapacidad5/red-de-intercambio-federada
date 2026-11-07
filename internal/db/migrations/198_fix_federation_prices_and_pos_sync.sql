@@ -2,6 +2,15 @@
 -- variantes por unidad (saco, kg, g, L, ml, etc.), publicación de productos
 -- compuestos/locales en __FEDERATION__, y sincronización de tienda con POS.
 
+-- 0. Reemplazar el índice único global idx_products_catalog_key por un índice
+--    compuesto no restrictivo (node_domain, catalog_key) para que tanto
+--    __FEDERATION__ como las copias en los nodos puedan compartir catalog_key
+--    sin violar unicidad (SQLSTATE 23505).
+DROP INDEX IF EXISTS idx_products_catalog_key;
+CREATE INDEX IF NOT EXISTS idx_products_catalog_key
+  ON products (node_domain, catalog_key)
+  WHERE catalog_key IS NOT NULL AND catalog_key <> '';
+
 -- 1. Función SQL inmutable para calcular el precio en CENTAVOS de cualquier
 --    variante de presentación a partir del producto maestro en __FEDERATION__.
 CREATE OR REPLACE FUNCTION compute_federation_variant_price_cents(
@@ -134,6 +143,20 @@ BEGIN
     END IF;
     RETURN ROUND(ppu_cents * factor_to_base * qty);
 END;
+$$;
+
+-- Sobrecarga compatible si se invoca con (price_per_unit, price_per_kg, unit, weight_kg, base_unit, sell_unit, sell_qty)
+CREATE OR REPLACE FUNCTION compute_federation_variant_price_cents(
+    fed_price_per_unit DOUBLE PRECISION,
+    fed_price_per_kg   DOUBLE PRECISION,
+    fed_unit           TEXT,
+    fed_weight_kg      DOUBLE PRECISION,
+    fed_base_unit      TEXT,
+    sell_unit          TEXT,
+    sell_qty           DOUBLE PRECISION
+) RETURNS DOUBLE PRECISION
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT compute_federation_variant_price_cents($1, $2, $4, $3, $5, $6, $7);
 $$;
 
 -- 2. Asegurar que todos los productos tengan catalog_key poblado
@@ -329,3 +352,4 @@ BEGIN
           );
     END IF;
 END $$;
+

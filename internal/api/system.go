@@ -776,8 +776,8 @@ func (h *SystemHandler) listProducts(w http.ResponseWriter, r *http.Request) {
 		       compute_federation_variant_price_cents(
 		           COALESCE(fed.price_per_unit, p.price_per_unit, 0),
 		           COALESCE(fed.price_per_kg, p.price_per_kg, 0),
-		           COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 		           COALESCE(fed.weight_kg, p.weight_kg, 0),
+		           COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 		           COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
 		           COALESCE(NULLIF(p.unit, ''), NULLIF(fed.unit, ''), 'unidad'),
 		           1
@@ -942,8 +942,8 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 		       compute_federation_variant_price_cents(
 		           COALESCE(p.price_per_unit, 0),
 		           COALESCE(p.price_per_kg, 0),
-		           COALESCE(NULLIF(p.unit, ''), 'unidad'),
 		           COALESCE(p.weight_kg, 0),
+		           COALESCE(NULLIF(p.unit, ''), 'unidad'),
 		           COALESCE(NULLIF(p.base_unit, ''), 'kg'),
 		           COALESCE(NULLIF(p.unit, ''), 'unidad'),
 		           1

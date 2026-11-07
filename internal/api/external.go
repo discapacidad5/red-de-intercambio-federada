@@ -1188,8 +1188,8 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		SET base_price = compute_federation_variant_price_cents(
 				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
 				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
-				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
 				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
@@ -1197,8 +1197,8 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			price_trueque = compute_federation_variant_price_cents(
 				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
 				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
-				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
 				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
@@ -1206,8 +1206,8 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			final_price = compute_federation_variant_price_cents(
 				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
 				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
-				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
 				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
 				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
