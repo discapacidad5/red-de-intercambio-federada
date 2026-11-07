@@ -1258,7 +1258,7 @@ export default function Store() {
                     )}
                     <div className="mt-3 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-lg font-bold text-trueque-700">{displayPrice} {currency}</span>
+                        <span className="text-lg font-bold text-trueque-700">{fmtTQ(displayPrice)} {currency}</span>
                         <span className="text-xs text-gray-500">por {unit}</span>
                       </div>
                       {extras > 0 && !isComposite && (
@@ -1316,7 +1316,7 @@ export default function Store() {
                             category: item.category || '',
                             unit: item.unit || product?.unit || 'unidad',
                             quantity_per_unit: item.quantity_per_unit || 1,
-                            price_trueque: displayPrice,
+                            price_trueque: displayPrice / 100,
                             stock: item.stock || 0,
                             is_service: !!item.is_service,
                           })
@@ -1379,7 +1379,7 @@ export default function Store() {
                               {t('store_catalog_locked', 'Producto del catálogo — precio y unidad heredados (no editables)')}
                             </p>
                             <p className="text-[10px] text-gray-600">
-                              {product?.name || item.product_name} · catálogo: {item.price_per_kg > 0 ? `${item.price_per_kg} ${currency}/${item.base_unit || 'kg'}` : `${displayPrice} ${currency}/${unit}`}
+                              {product?.name || item.product_name} · catálogo: {item.price_per_kg > 0 ? `${item.price_per_kg} ${currency}/${item.base_unit || 'kg'}` : `${fmtTQ(displayPrice)} ${currency}/${unit}`}
                             </p>
                             {/* Unidad de venta: elige cómo vendes — el precio se calcula solo */}
                             <div>
@@ -1490,7 +1490,7 @@ export default function Store() {
                             onClick={async () => {
                               setEditSaving(true)
                               try {
-                                await api.put(`/store/items/${item.id}`, editForm)
+                                await api.put(`/store/items/${item.id}`, { ...editForm, price_trueque: toCents(editForm.price_trueque) })
                                 setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, ...editForm } : i))
                                 setEditingItem(null)
                                 setSuccessMsg(t('store_item_updated', 'Producto actualizado'))
