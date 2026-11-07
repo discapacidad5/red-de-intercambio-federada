@@ -468,8 +468,15 @@ export default function Store() {
   // Marca si el item aparece en el catalogo del punto de venta
   const togglePosVisibility = async (itemId: string, show: boolean) => {
     try {
-      await api.put(`/store/items/${itemId}/pos-visibility`, { show_in_pos: show })
-      setItems(prev => prev.map((i: any) => i.id === itemId ? { ...i, show_in_pos: show } : i))
+      const prev = items.find((i: any) => i.id === itemId)?.show_in_pos
+      setItems(prevItems => prevItems.map((i: any) => i.id === itemId ? { ...i, show_in_pos: show } : i))
+      try {
+        await api.put(`/store/items/${itemId}/pos-visibility`, { show_in_pos: show })
+      } catch (e: any) {
+        // Revertir si el servidor rechazó — y mostrar por qué
+        setItems(prevItems => prevItems.map((i: any) => i.id === itemId ? { ...i, show_in_pos: prev } : i))
+        setError(e.message || 'Error cambiando visibilidad en POS')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error')
     }
