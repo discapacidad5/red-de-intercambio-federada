@@ -913,15 +913,18 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 	search := r.URL.Query().Get("search")
 	orgFilter := r.URL.Query().Get("organization")
 	query := `
-		SELECT id, name, COALESCE(description,''), COALESCE(parent_category,''), COALESCE(category,''),
-		       COALESCE(subcategory,''), unit, price_per_unit,
-		       COALESCE(price_per_kg,0), COALESCE(weight_kg,0), COALESCE(base_unit,'kg'),
-		       is_approved, origin, badge, image_url, product_code, is_system, is_hidden,
-		       node_domain, COALESCE(source_node, ''), COALESCE(image_thumb_url,''), COALESCE(is_allowed, NULL),
-		       COALESCE(catalog_key,''), COALESCE(item_type,'product'), COALESCE(is_active,true)
-		FROM products`
-	var args []interface{}
-	argIdx := 1
+		SELECT p.id, p.name, COALESCE(p.description,''), COALESCE(p.parent_category,''), COALESCE(p.category,''),
+		       COALESCE(p.subcategory,''), p.unit, p.price_per_unit,
+		       COALESCE(p.price_per_kg,0), COALESCE(p.weight_kg,0), COALESCE(p.base_unit,'kg'),
+		       p.is_approved, p.origin, p.badge, p.image_url, p.product_code, p.is_system, p.is_hidden,
+		       p.node_domain, COALESCE(p.source_node, ''), COALESCE(p.image_thumb_url,''),
+		       COALESCE(allow.is_allowed, p.is_allowed),
+		       COALESCE(p.catalog_key,''), COALESCE(p.item_type,'product'), COALESCE(p.is_active,true)
+		FROM products p
+		LEFT JOIN product_node_allowlist allow
+		       ON allow.product_id = p.id AND allow.node_domain = $1`
+	args := []interface{}{requestNodeDomain}
+	argIdx := 2
 	whereParts := []string{"is_hidden = false", "COALESCE(is_composite, false) = false", "COALESCE(is_active, true) = true"}
 	if search != "" {
 		whereParts = append(whereParts, fmt.Sprintf("LOWER(name) LIKE LOWER($%d)", argIdx))
@@ -936,18 +939,23 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 	query += " WHERE " + strings.Join(whereParts, " AND ")
 	query += ` ORDER BY is_approved DESC, node_domain, COALESCE(parent_category,''), COALESCE(category,''), name LIMIT 1000`
 
-	// Set de product_codes que ya existen en el nodo local — permite a la UI
-	// marcar cuáles productos federados ya fueron incorporados ("En mi nodo").
+	// Set de product_codes y nombres que ya existen en el nodo local — permite
+	// a la UI marcar productos federados ya incorporados ("En mi nodo").
+	// El nombre es fallback para productos sin product_code.
 	inNodeCodes := map[string]bool{}
+	inNodeNames := map[string]bool{}
 	if codeRows, cErr := h.Pool.Query(r.Context(),
-		`SELECT DISTINCT product_code FROM products WHERE node_domain = $1 AND product_code IS NOT NULL AND product_code <> ''`,
+		`SELECT DISTINCT COALESCE(product_code,''), LOWER(name) FROM products WHERE node_domain = $1`,
 		requestNodeDomain); cErr == nil {
 		func() {
 			defer codeRows.Close()
 			for codeRows.Next() {
-				var c string
-				if codeRows.Scan(&c) == nil {
-					inNodeCodes[c] = true
+				var c, n string
+				if codeRows.Scan(&c, &n) == nil {
+					if c != "" {
+						inNodeCodes[c] = true
+					}
+					inNodeNames[n] = true
 				}
 			}
 		}()
@@ -1024,7 +1032,7 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 			"catalog_key":       catalogKey,
 			"item_type":         itemType,
 			"is_federation":     nodeDomain == "__FEDERATION__",
-			"in_my_node":        nodeDomain != "__FEDERATION__" || (pcode != "" && inNodeCodes[pcode]),
+			"in_my_node":        nodeDomain != "__FEDERATION__" || (pcode != "" && inNodeCodes[pcode]) || inNodeNames[strings.ToLower(name)],
 		})
 	}
 	localizeEntityMaps(r.Context(), h.Pool, products, "product", lang, fallbackLang, "name", "description", "badge", "unit")
@@ -5594,17 +5602,23 @@ func (h *SystemHandler) incorporateProduct(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Dedupe: si el nodo ya tiene un producto con el mismo código, no duplicar
+	// Dedupe: por product_code o por nombre (los productos sin código se
+	// deduplican por nombre — evita incorporar dos veces el mismo producto)
+	var exists bool
 	if src.ProductCode != nil && *src.ProductCode != "" {
-		var exists bool
 		_ = h.Pool.QueryRow(r.Context(),
-			`SELECT EXISTS(SELECT 1 FROM products WHERE node_domain = $1 AND product_code = $2)`,
-			nodeDomain, *src.ProductCode,
+			`SELECT EXISTS(SELECT 1 FROM products WHERE node_domain = $1 AND (product_code = $2 OR LOWER(name) = LOWER($3)))`,
+			nodeDomain, *src.ProductCode, src.Name,
 		).Scan(&exists)
-		if exists {
-			writeJSON(w, 200, map[string]interface{}{"status": "already", "message": "Este producto ya está en tu nodo"})
-			return
-		}
+	} else {
+		_ = h.Pool.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM products WHERE node_domain = $1 AND LOWER(name) = LOWER($2))`,
+			nodeDomain, src.Name,
+		).Scan(&exists)
+	}
+	if exists {
+		writeJSON(w, 200, map[string]interface{}{"status": "already", "message": "Este producto ya está en tu nodo"})
+		return
 	}
 
 	var newID uuid.UUID

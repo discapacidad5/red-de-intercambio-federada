@@ -1436,7 +1436,7 @@ export default function Products() {
                         {activeTab === 'federated' && p.node_domain && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-xs text-blue-600">{t('node_label', 'Nodo:')} {p.is_federation ? t('federation_catalog_name', 'Federacion (catalogo global)') : p.node_domain}</p>
-                            {p.available_locally ? (
+                            {(p.available_locally || (p.is_federation && p.in_my_node)) ? (
                               <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                                 <Check size={10} /> {t('available_locally', 'Disponible en mi nodo')}
                               </span>
