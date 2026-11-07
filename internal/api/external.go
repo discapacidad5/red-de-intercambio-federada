@@ -1022,9 +1022,10 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// Multi-categoría: 'category' = primera (compat) + 'categories' = todas
-	var categories interface{}
-	if len(req.Categories) > 0 {
-		categories = req.Categories
+	// Siempre text[] (vacío o con valores) — nil sin tipo causa 500
+	categories := req.Categories
+	if categories == nil {
+		categories = []string{}
 	}
 	primaryCat := strings.TrimSpace(req.Category)
 	if len(req.Categories) > 0 && primaryCat == "" {
@@ -1046,10 +1047,10 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			is_service      = COALESCE($11, is_service),
 			updated_at      = NOW()
 		WHERE id = $13 AND (
-			owner_id = $13 OR owner_id IS NULL
+			owner_id = $14 OR owner_id IS NULL
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
-				  AND obm.user_id = $13 AND COALESCE(obm.is_active, true) = true)
+				  AND obm.user_id = $14 AND COALESCE(obm.is_active, true) = true)
 		)`,
 		req.ProductName, req.Description, primaryCat,
 		req.ParentCategory, req.Subcategory, req.Unit,
