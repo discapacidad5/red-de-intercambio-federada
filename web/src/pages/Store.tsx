@@ -555,51 +555,83 @@ export default function Store() {
                 <Package size={18} />{t('store_add_catalog_title', 'Agregar producto del catálogo')}
               </h3>
               <p className="text-xs text-emerald-700">
-                {t('store_add_catalog_desc', 'Elige un producto ya existente en el catálogo del nodo — se agrega tal como está, con su precio. Solo indica cuánto vendes.')}
+                {t('store_add_catalog_desc', 'Elige un producto ya existente en el catálogo del nodo — se agrega tal como está, con su precio. Primero selecciona el producto, luego indica cuánto vendes.')}
               </p>
               <input
                 className="input"
-                placeholder={t('store_catalog_search', 'Buscar producto del catálogo...')}
+                placeholder={t('store_catalog_search', 'Buscar producto del catálogo por nombre...')}
                 value={catAddSearch}
                 onChange={(e) => setCatAddSearch(e.target.value)}
               />
-              <select
-                className="input"
-                value={catAddProductId}
-                onChange={(e) => setCatAddProductId(e.target.value)}
-              >
-                <option value="">{t('store_select_product', 'Seleccionar producto...')}</option>
+
+              {/* Rejilla visual de productos del catálogo — click para seleccionar */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-80 overflow-y-auto">
                 {products
                   .filter((p: any) => !catAddSearch || p.name?.toLowerCase().includes(catAddSearch.toLowerCase()) || (p.description || '').toLowerCase().includes(catAddSearch.toLowerCase()))
-                  .map((p: any) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {p.price_trueque || p.price} {currency}/{p.unit || 'unidad'} ({p.category || 'sin categoría'})
-                    </option>
-                  ))}
-              </select>
+                  .map((p: any) => {
+                    const selected = catAddProductId === p.id
+                    const img = p.image_thumb_url || p.image_url
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => setCatAddProductId(selected ? '' : p.id)}
+                        className={`text-left rounded-lg border-2 overflow-hidden transition ${
+                          selected
+                            ? 'border-emerald-500 ring-2 ring-emerald-300 bg-white'
+                            : 'border-gray-200 bg-white hover:border-emerald-300'
+                        }`}
+                      >
+                        {img ? (
+                          <img src={img} alt={p.name} className="w-full h-20 object-cover" />
+                        ) : (
+                          <div className="w-full h-20 bg-gray-100 flex items-center justify-center">
+                            <Package size={24} className="text-gray-300" />
+                          </div>
+                        )}
+                        <div className="p-2">
+                          <p className="text-xs font-bold text-gray-800 leading-tight line-clamp-2">{p.name}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{p.category || 'sin categoría'}</p>
+                          <p className="text-xs font-bold text-trueque-700 mt-1">
+                            {p.price_trueque || p.price} {currency}/{p.unit || 'unidad'}
+                          </p>
+                        </div>
+                      </button>
+                    )
+                  })}
+              </div>
+
+              {/* Paso 2: una vez seleccionado, pregunta cantidad */}
               {catAddProductId && (() => {
                 const sel = products.find((p: any) => p.id === catAddProductId)
                 return sel ? (
-                  <div className="text-xs text-emerald-800 bg-white/60 rounded p-2">
-                    <strong>{sel.name}</strong> — {sel.description || 'sin descripción'} · {sel.price_trueque || sel.price} {currency}/{sel.unit || 'unidad'}
+                  <div className="bg-white border border-emerald-300 rounded-lg p-3 space-y-3">
+                    <div className="flex items-center gap-3">
+                      {(sel.image_thumb_url || sel.image_url) && (
+                        <img src={sel.image_thumb_url || sel.image_url} alt="" className="w-12 h-12 rounded object-cover" />
+                      )}
+                      <div>
+                        <p className="font-bold text-emerald-900">{sel.name}</p>
+                        <p className="text-xs text-gray-600">{sel.price_trueque || sel.price} {currency}/{sel.unit || 'unidad'}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">{t('store_catalog_stock', 'Cantidad que vendes (stock) — 0 para servicios o ilimitado')}</label>
+                      <input
+                        type="number" min={0} className="input" placeholder="Ej: 10"
+                        value={catAddStock}
+                        onChange={(e) => setCatAddStock(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      onClick={handleCatalogAdd}
+                      disabled={catAddSaving}
+                      className="btn-primary disabled:opacity-50"
+                    >
+                      {catAddSaving ? t('common:loading') : t('store_catalog_add_confirm', 'Agregar a mi tienda')}
+                    </button>
                   </div>
                 ) : null
               })()}
-              <div>
-                <label className="label">{t('store_catalog_stock', 'Cantidad que vendes (stock) — deja en 0 para servicios o ilimitado')}</label>
-                <input
-                  type="number" min={0} className="input" placeholder="Ej: 10"
-                  value={catAddStock}
-                  onChange={(e) => setCatAddStock(e.target.value)}
-                />
-              </div>
-              <button
-                onClick={handleCatalogAdd}
-                disabled={!catAddProductId || catAddSaving}
-                className="btn-primary disabled:opacity-50"
-              >
-                {catAddSaving ? t('common:loading') : t('store_catalog_add_confirm', 'Agregar a mi tienda')}
-              </button>
             </div>
           )}
 
