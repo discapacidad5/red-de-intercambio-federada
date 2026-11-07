@@ -687,6 +687,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Servicios universales del nodo (ej: Trabajo en el Conuco / Mano Vuelta)
+	matrixAvailable := baseRate > 0 && workHours > 0
 	uRows, uErr := h.Pool.Query(ctx, `
 		SELECT id::text, COALESCE(item_code, '90001'), name, COALESCE(category, 'Servicios'),
 		       COALESCE(unit, 'hora'), price_per_unit,
@@ -708,6 +709,16 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			}
 			if existingProdIDs[pid] {
 				continue
+			}
+			// Servicios de trabajo sembrados: la matriz dinámica los cubre
+			// (3 tipos × hora/jornada) — saltarlos para no duplicar.
+			if matrixAvailable {
+				lc := strings.ToLower(name + " " + cat)
+				if strings.Contains(lc, "jornada") || strings.Contains(lc, "trabajo") ||
+					strings.Contains(lc, "conuco") || strings.Contains(lc, "mano vuelta") ||
+					strings.Contains(lc, "labor") {
+					continue
+				}
 			}
 			// Precio real del trabajo: tarifa del nodo por tipo (normal/oficina/
 			// técnico/agrícola) y por horas de jornada configuradas.
@@ -733,6 +744,47 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 				IsService:   true,
 				IsUniversal: true,
 				IconURL:     iconURL,
+			})
+		}
+	}
+
+	// 3. Matriz de servicios de trabajo — SIEMPRE presente en todo punto,
+	// aunque la tienda esté vacía. 3 tipos × (hora + jornada completa),
+	// calculados con la tarifa energética del nodo.
+	if matrixAvailable {
+		laborTypes := []struct {
+			suffix string
+			name   string
+			mult   float64
+		}{
+			{"admin", "Trabajo común / oficina", effAdmin},
+			{"tecnico", "Trabajo técnico / especialista", effTech},
+			{"agricola", "Trabajo pesado / agrícola (conuco)", effAgr},
+		}
+		for _, lt := range laborTypes {
+			rateHour := baseRate * lt.mult
+			rateDay := rateHour * float64(workHours)
+			items = append(items, VendorCatalogCompactItem{
+				ID:          "svc-work-" + lt.suffix + "-hora",
+				Code:        "900" + lt.suffix[:1] + "1",
+				Name:        lt.name + " (1 hora)",
+				Category:    "Trabajo",
+				Unit:        "hora",
+				PriceCents:  int64(rateHour*100 + 0.5),
+				Stock:       -1,
+				IsService:   true,
+				IsUniversal: true,
+			})
+			items = append(items, VendorCatalogCompactItem{
+				ID:          "svc-work-" + lt.suffix + "-jornada",
+				Code:        "900" + lt.suffix[:1] + "2",
+				Name:        "Jornada completa — " + lt.name,
+				Category:    "Trabajo",
+				Unit:        "jornada",
+				PriceCents:  int64(rateDay*100 + 0.5),
+				Stock:       -1,
+				IsService:   true,
+				IsUniversal: true,
 			})
 		}
 	}
