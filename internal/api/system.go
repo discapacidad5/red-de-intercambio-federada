@@ -772,11 +772,35 @@ func (h *SystemHandler) listProducts(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT p.id, p.name, COALESCE(p.description, '') AS description,
 		       COALESCE(p.parent_category,''), COALESCE(p.category,''), COALESCE(p.subcategory,''),
-		       p.unit, p.price_per_unit, COALESCE(p.price_per_kg,0), COALESCE(p.weight_kg,0),
-		       COALESCE(p.base_unit,'kg'), p.is_approved, p.origin, p.badge, p.image_url,
+		       COALESCE(NULLIF(fed.unit, ''), p.unit),
+		       compute_federation_variant_price_cents(
+		           COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+		           COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+		           COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+		           COALESCE(fed.weight_kg, p.weight_kg, 0),
+		           COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+		           COALESCE(NULLIF(p.unit, ''), NULLIF(fed.unit, ''), 'unidad'),
+		           1
+		       ),
+		       COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+		       COALESCE(fed.weight_kg, p.weight_kg, 0),
+		       COALESCE(NULLIF(fed.base_unit,''), NULLIF(p.base_unit,''), 'kg'),
+		       p.is_approved, p.origin, p.badge, p.image_url,
 		       p.product_code, p.is_system, p.is_hidden, COALESCE(p.image_thumb_url,''),
 		       COALESCE(p.is_allowed, NULL)
 		FROM products p
+		LEFT JOIN LATERAL (
+			SELECT f.price_per_unit, f.price_per_kg, f.unit, f.weight_kg, f.base_unit
+			FROM products f
+			WHERE f.node_domain = '__FEDERATION__' AND f.is_active = true
+			  AND (
+			    (COALESCE(p.catalog_key, '') <> '' AND f.catalog_key = p.catalog_key)
+			    OR (COALESCE(p.product_code, '') <> '' AND f.product_code = p.product_code)
+			    OR LOWER(TRIM(f.name)) = LOWER(TRIM(p.name))
+			  )
+			ORDER BY (f.catalog_key = p.catalog_key) DESC
+			LIMIT 1
+		) fed ON true
 		WHERE p.node_domain IN ($1, 'localhost', 'default') AND p.is_hidden = false`
 	args := []interface{}{nodeDomain}
 	if search != "" {
@@ -914,7 +938,16 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 	orgFilter := r.URL.Query().Get("organization")
 	query := `
 		SELECT p.id, p.name, COALESCE(p.description,''), COALESCE(p.parent_category,''), COALESCE(p.category,''),
-		       COALESCE(p.subcategory,''), p.unit, p.price_per_unit,
+		       COALESCE(p.subcategory,''), p.unit,
+		       compute_federation_variant_price_cents(
+		           COALESCE(p.price_per_unit, 0),
+		           COALESCE(p.price_per_kg, 0),
+		           COALESCE(NULLIF(p.unit, ''), 'unidad'),
+		           COALESCE(p.weight_kg, 0),
+		           COALESCE(NULLIF(p.base_unit, ''), 'kg'),
+		           COALESCE(NULLIF(p.unit, ''), 'unidad'),
+		           1
+		       ),
 		       COALESCE(p.price_per_kg,0), COALESCE(p.weight_kg,0), COALESCE(p.base_unit,'kg'),
 		       p.is_approved, p.origin, p.badge, p.image_url, p.product_code, p.is_system, p.is_hidden,
 		       p.node_domain, COALESCE(p.source_node, ''), COALESCE(p.image_thumb_url,''),
@@ -925,16 +958,18 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 		       ON allow.product_id = p.id AND allow.node_domain = $1`
 	args := []interface{}{requestNodeDomain}
 	argIdx := 2
-	whereParts := []string{"is_hidden = false", "COALESCE(is_composite, false) = false", "COALESCE(is_active, true) = true"}
+	whereParts := []string{"p.is_hidden = false", "COALESCE(p.is_active, true) = true"}
 	if search != "" {
-		whereParts = append(whereParts, fmt.Sprintf("LOWER(name) LIKE LOWER($%d)", argIdx))
+		whereParts = append(whereParts, fmt.Sprintf("LOWER(p.name) LIKE LOWER($%d)", argIdx))
 		args = append(args, "%"+search+"%")
 		argIdx++
 	}
 	if orgFilter != "" {
-		whereParts = append(whereParts, fmt.Sprintf("node_domain = $%d", argIdx))
+		whereParts = append(whereParts, fmt.Sprintf("(p.node_domain = $%d OR p.source_node = $%d)", argIdx, argIdx))
 		args = append(args, orgFilter)
 		argIdx++
+	} else {
+		whereParts = append(whereParts, "p.node_domain = '__FEDERATION__'")
 	}
 	query += " WHERE " + strings.Join(whereParts, " AND ")
 	query += ` ORDER BY is_approved DESC, node_domain, COALESCE(parent_category,''), COALESCE(category,''), name LIMIT 1000`
@@ -1090,6 +1125,7 @@ func (h *SystemHandler) promoteCompositeToBase(w http.ResponseWriter, r *http.Re
 		writeError(w, 500, "error al promover producto")
 		return
 	}
+	_, _ = db.UpsertProductToFederation(r.Context(), h.Pool, id)
 	writeJSON(w, 200, map[string]interface{}{
 		"message": "Producto promovido a producto base. Ahora aparece en toda la federacion y puede usarse como ingrediente.",
 	})
@@ -1305,7 +1341,7 @@ func (h *SystemHandler) createProduct(w http.ResponseWriter, r *http.Request) {
 		if compositeDesc != "" {
 			compositeDesc += ", "
 		}
-		compositeDesc += fmt.Sprintf("%s x%.4f (%.2f TQ)", c.ComponentName, c.Quantity, subtotal)
+		compositeDesc += fmt.Sprintf("%s x%.4f (%.2f TQ)", c.ComponentName, c.Quantity, subtotal/100.0)
 	}
 	// El precio del compuesto se calcula solo; el precio enviado es referencia
 	// pero nunca puede ser menor que la suma de componentes (piso federado).
@@ -1317,10 +1353,11 @@ func (h *SystemHandler) createProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := uuid.New()
+	catKey := db.CatalogItemSlug(req.Name)
 	_, err := h.Pool.Exec(r.Context(), `
-		INSERT INTO products (id, node_domain, name, description, parent_category, category, subcategory, unit, price_per_unit, origin, badge, image_url, product_code, is_approved, is_composite, item_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, false, true, 'composite')`,
-		id, nodeDomain, req.Name, req.Description, req.ParentCategory, req.Category, req.Subcategory, req.Unit, req.Price, req.Origin, req.Badge, req.ImageURL, req.ProductCode)
+		INSERT INTO products (id, node_domain, catalog_key, name, description, parent_category, category, subcategory, unit, base_unit, weight_kg, price_per_kg, price_per_unit, origin, badge, image_url, product_code, is_approved, is_composite, item_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 1, ROUND(($10::numeric / 100.0), 4), $10, $11, $12, $13, $14, true, true, 'composite')`,
+		id, nodeDomain, catKey, req.Name, req.Description, req.ParentCategory, req.Category, req.Subcategory, req.Unit, req.Price, req.Origin, req.Badge, req.ImageURL, req.ProductCode)
 	if err != nil {
 		writeError(w, 500, err.Error())
 		return
@@ -1335,6 +1372,8 @@ func (h *SystemHandler) createProduct(w http.ResponseWriter, r *http.Request) {
 			 VALUES ($1, 'catalog', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 			id, pid, c.ComponentCatalogKey, c.ComponentName, c.ComponentUnit, c.ComponentPrice, c.Quantity, subtotal, c.ComponentCategory, i)
 	}
+	// Publicar automáticamente en __FEDERATION__ como suma de todos los nodos
+	_, _ = db.UpsertProductToFederation(r.Context(), h.Pool, id)
 	productID := id.String()
 	baseFields := map[string]string{"name": req.Name, "description": req.Description, "badge": req.Badge, "unit": req.Unit}
 	ensureProductTaxonomySources(r.Context(), h.Pool, nodeDomain, req.ParentCategory, req.Category, req.Subcategory)
@@ -1469,6 +1508,7 @@ func (h *SystemHandler) updateProduct(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 404, "product not found")
 		return
 	}
+	_, _ = db.UpsertProductToFederation(r.Context(), h.Pool, id)
 	productID := id.String()
 	baseFields := map[string]string{"name": req.Name, "description": req.Description, "badge": req.Badge, "unit": req.Unit}
 	ensureProductTaxonomySources(r.Context(), h.Pool, nodeDomain, req.ParentCategory, req.Category, req.Subcategory)
@@ -1514,8 +1554,8 @@ func (h *SystemHandler) approveProduct(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, price_per_unit, price_per_unit, 'Aprobacion inicial', $2 FROM products WHERE id = $1`,
 		id, userID)
 
-	// Broadcast a nodos federados: solo productos aprobados por la asamblea local
-	// se distribuyen a otros nodos para su aprobacion individual
+	// Publicar/actualizar en __FEDERATION__ y notificar a nodos federados
+	_, _ = db.UpsertProductToFederation(r.Context(), h.Pool, id)
 	go h.broadcastProductToFederation(r.Context(), id)
 
 	writeJSON(w, 200, map[string]interface{}{

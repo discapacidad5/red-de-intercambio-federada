@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 )
 
 type seedPage struct {
@@ -3383,6 +3384,7 @@ func (d *DB) SeedProductsToNode(ctx context.Context, nodeDomain string) error {
 			continue
 		}
 		catalogKey := CatalogItemSlug(p.name)
+		priceCents := p.price * 100
 		_, err := d.Pool.Exec(ctx, `
 			INSERT INTO products (node_domain, name, parent_category, category, subcategory, origin, unit, description, badge, image_url,
 			                      price_per_unit, is_approved, is_system, product_code,
@@ -3393,7 +3395,7 @@ func (d *DB) SeedProductsToNode(ctx context.Context, nodeDomain string) error {
 			WHERE NOT EXISTS (
 				SELECT 1 FROM products WHERE catalog_key = $15
 			)`,
-			fedDomain, p.name, p.parentCategory, p.category, p.subcategory, p.unit, p.description, p.badge, p.imageURL, p.price,
+			fedDomain, p.name, p.parentCategory, p.category, p.subcategory, p.unit, p.description, p.badge, p.imageURL, priceCents,
 			p.energyDirect, p.energyHuman, p.energyInputs, p.energyAmort, catalogKey, itemType)
 		if err != nil {
 			log.Printf("Warning: failed to seed catalog item %s: %v", p.name, err)
@@ -3485,12 +3487,15 @@ func (d *DB) SeedProductsToNode(ctx context.Context, nodeDomain string) error {
 		{"Canasta Basica Familiar Semanal", 0, "canasta", 0, 30, 30},
 	}
 	for _, c := range corrections {
+		// price_per_unit se almacena siempre en CENTAVOS (ej: 2.25 TQ -> 225 centavos),
+		// mientras que price_per_kg se mantiene en TQ por unidad base (ej: 0.09 TQ/kg).
+		priceCents := math.Round(c.pricePerUnit * 100)
 		_, _ = d.Pool.Exec(ctx, `
 			UPDATE products SET
-				price_per_kg = $3, base_unit = $4, weight_kg = $5,
-				price_per_unit = $6, energy_inputs = $7
-			WHERE node_domain = $1 AND name = $2`,
-			fedDomain, c.name, c.pricePerKg, c.baseUnit, c.weightKg, c.pricePerUnit, c.energyInputs)
+				price_per_kg = $2, base_unit = $3, weight_kg = $4,
+				price_per_unit = $5, energy_inputs = $6
+			WHERE name = $1`,
+			c.name, c.pricePerKg, c.baseUnit, c.weightKg, priceCents, c.energyInputs)
 	}
 
 	// Actualizar descripciones de productos corregidos (migracion 085-086)

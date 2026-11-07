@@ -483,6 +483,7 @@ class PosViewModel(
                         successMessage = "Sesión iniciada con éxito como @${user?.username ?: username}"
                     )
                 }
+                loadVendorCatalog(sellerId = user?.id)
             }.onFailure { err ->
                 val msg = err.message ?: ""
                 // Si el servidor rechazo por terminal no registrado o clave incorrecta,
@@ -515,6 +516,7 @@ class PosViewModel(
                         currentUser = user
                     )
                 }
+                loadVendorCatalog(sellerId = user.id)
             }.onFailure { err ->
                 val hasToken = !repository.apiClient.authToken.isNullOrBlank()
                 _uiState.update {

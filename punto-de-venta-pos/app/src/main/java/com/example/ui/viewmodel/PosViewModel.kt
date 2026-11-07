@@ -1,6 +1,9 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.api.*
@@ -9,6 +12,7 @@ import com.example.data.db.ShiftEntity
 import com.example.data.db.TerminalConfigEntity
 import com.example.data.db.TransactionEntity
 import com.example.data.repository.PosRepository
+import com.example.data.repository.ServerRejectedException
 import com.example.ui.util.CurrencyHelper
 import com.example.ui.util.FeedbackHelper
 import com.example.ui.util.FormatConfig
@@ -47,6 +51,8 @@ data class PosUiState(
     val isLoggedIn: Boolean = false,
     val isRegistered: Boolean = false,
     val isDemoNode: Boolean = false,
+    // true cuando el dispositivo no tiene red — la app sigue operando offline
+    val isOffline: Boolean = false,
 
     // Shift
     val activeShift: ShiftEntity? = null,
@@ -55,6 +61,7 @@ data class PosUiState(
     val amountInput: String = "",
     val chargeDescription: String = "",
     val vendorCatalog: List<VendorCatalogCompactItemDto> = emptyList(),
+    val catalogCategories: List<String> = emptyList(),
     val cartItems: List<PosCartItemDto> = emptyList(),
     val sellerUserId: String? = null,
     val pendingWriteNfcPayload: String? = null,
@@ -85,6 +92,8 @@ data class PosUiState(
     val idDocNumber: String = "",
     // Username-based NFC flow
     val customerUsername: String = "",
+    val lookupDocType: String = "cedula_v",
+    val lookupDocNumber: String = "",
     val userLookupResult: UserLookupResponse? = null,
     val requiresDocument: Boolean = false, // true si el servidor dice que la tarjeta es Classic
     val nfcPaymentResult: PaymentResultDecrypted? = null,
@@ -163,14 +172,59 @@ class PosViewModel(
     private var pairingPollJob: Job? = null
     private var heartbeatJob: Job? = null
 
+    private val connectivityManager =
+        application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            _uiState.update { it.copy(isOffline = false) }
+        }
+
+        override fun onLost(network: Network) {
+            _uiState.update { it.copy(isOffline = true) }
+        }
+    }
+
     init {
+        // Monitor de conectividad: solo informa el indicador "Sin conexión",
+        // NUNCA cambia el estado de sesión ni de registro del terminal.
+        try {
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+            val hasNetwork = connectivityManager?.activeNetwork != null
+            _uiState.update { it.copy(isOffline = !hasNetwork) }
+        } catch (_: Exception) {}
+
+        // ÚNICA vía de cierre de sesión automático: el servidor respondió
+        // HTTP 401 a una llamada autenticada (desconoce las credenciales).
+        // La falta de respuesta del servidor nunca cierra la sesión.
+        repository.apiClient.onAuthRejected = { reason ->
+            viewModelScope.launch {
+                repository.clearLocalSession()
+                stopQrPolling()
+                stopMultisigPolling()
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = false,
+                        currentUser = null,
+                        // Solo navegar a Login si había una sesión activa en uso;
+                        // no interferir con pantallas de registro/emparejamiento.
+                        currentScreen = if (it.isLoggedIn) PosScreen.Login else it.currentScreen,
+                        errorMessage = reason
+                            ?: "El servidor no reconoció las credenciales de sesión. Inicie sesión nuevamente."
+                    )
+                }
+            }
+        }
+
         viewModelScope.launch {
             val config = repository.getOrInitTerminalConfig()
             // Apply saved format settings to the in-memory FormatConfig so that
             // all formatters (currency, date, time) use the server-provided locale.
             FormatConfig.updateFromEntity(config)
             val hasActiveSession = !config.sessionToken.isNullOrBlank()
-            
+            // Restaurar el perfil guardado para operar offline desde el arranque
+            val cachedUser = if (hasActiveSession) repository.restoreCachedUser() else null
+
             _uiState.update {
                 it.copy(
                     serverUrl = config.serverUrl,
@@ -178,6 +232,7 @@ class PosViewModel(
                     isRegistered = config.isRegistered,
                     isDemoNode = repository.apiClient.isDemoNode,
                     isLoggedIn = hasActiveSession,
+                    currentUser = cachedUser,
                     currentScreen = when {
                         !config.isRegistered -> PosScreen.RegisterTerminal
                         hasActiveSession -> PosScreen.Dashboard
@@ -233,8 +288,8 @@ class PosViewModel(
         }
 
         // Heartbeat periodico: cada 60 segundos verifica que el terminal
-        // sigue registrado, activo y que las claves coinciden.
-        // Si las claves no coinciden, cierra la sesion y envia a re-pairing.
+        // sigue registrado, activo y que las claves coinciden. Solo actua
+        // sobre ordenes EXPLICITAS del servidor — nunca por falta de respuesta.
         startPeriodicHeartbeat()
     }
 
@@ -244,26 +299,23 @@ class PosViewModel(
             while (true) {
                 delay(60_000) // 60 segundos
                 val state = _uiState.value
-                if (!state.isRegistered) continue
+                // Sin red no se consulta nada — la sesión y el registro se
+                // mantienen intactos hasta que el servidor ordene lo contrario.
+                if (!state.isRegistered || state.isOffline) continue
 
-                // 1. Verificar sesion JWT si hay usuario logueado
+                // 1. Refrescar perfil del usuario SOLO como actualización de
+                // datos (balance, nombre). NUNCA invalida la sesión: sin
+                // conexión devuelve el perfil en caché, y un rechazo real
+                // (401) se maneja globalmente vía onAuthRejected.
                 if (state.isLoggedIn) {
-                    val meResult = repository.fetchCurrentUser()
-                    if (meResult.isFailure) {
-                        // Sesión expirada o invalida — enviar a login
-                        _uiState.update {
-                            it.copy(
-                                isLoggedIn = false,
-                                currentUser = null,
-                                currentScreen = PosScreen.Login,
-                                errorMessage = "Sesión expirada. Por favor inicie sesión nuevamente."
-                            )
-                        }
-                        continue
+                    repository.fetchCurrentUser().onSuccess { user ->
+                        _uiState.update { it.copy(currentUser = user) }
                     }
                 }
 
-                // 2. Heartbeat del terminal
+                // 2. Heartbeat del terminal — solo actúa sobre respuestas
+                // EXPLÍCITAS del servidor (notFound / key mismatch / inactivo).
+                // Los fallos de red o HTTP 5xx no cambian ningún estado.
                 val hbRes = repository.heartbeat()
                 hbRes.onSuccess { hb ->
                     if (hb.notFound == true) {
@@ -349,20 +401,41 @@ class PosViewModel(
             }
             true
         } else {
-            // Auto-renovacion fallo — enviar a re-parear manual
-            repository.resetTerminalRegistration()
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    isRegistered = false,
-                    isLoggedIn = false,
-                    currentUser = null,
-                    currentScreen = PosScreen.RegisterTerminal,
-                    errorMessage = "No se pudieron renovar las claves automáticamente. ${(renewResult.exceptionOrNull()?.message ?: "")}. Debe emparejar nuevamente."
-                )
+            val err = renewResult.exceptionOrNull()
+            if (err is ServerRejectedException) {
+                // El servidor rechazó explícitamente la renovación → re-parear
+                repository.resetTerminalRegistration()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isRegistered = false,
+                        isLoggedIn = false,
+                        currentUser = null,
+                        currentScreen = PosScreen.RegisterTerminal,
+                        errorMessage = "No se pudieron renovar las claves automáticamente. ${(err.message ?: "")}. Debe emparejar nuevamente."
+                    )
+                }
+            } else {
+                // Fallo de red o del servidor (sin respuesta / 5xx): NO se
+                // desregistra el terminal ni se cierra sesión. Se reintenta
+                // en el próximo heartbeat o en la próxima transacción.
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Sin conexión para renovar las claves del terminal. Se reintentará automáticamente."
+                    )
+                }
             }
             false
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
+        repository.apiClient.onAuthRejected = null
     }
 
     // Usa las claves existentes para verificar si el servidor ya reconoce este terminal
@@ -730,6 +803,14 @@ class PosViewModel(
         _uiState.update { it.copy(customerUsername = username) }
     }
 
+    fun setLookupDocType(docType: String) {
+        _uiState.update { it.copy(lookupDocType = docType) }
+    }
+
+    fun setLookupDocNumber(docNumber: String) {
+        _uiState.update { it.copy(lookupDocNumber = docNumber) }
+    }
+
     // --- VENDOR STORE CATALOG & MANDATORY CART MANAGEMENT ---
     fun loadVendorCatalog(sellerId: String? = null, sellerCardUid: String? = null) {
         viewModelScope.launch {
@@ -741,6 +822,7 @@ class PosViewModel(
                 _uiState.update {
                     it.copy(
                         vendorCatalog = cat.items,
+                        catalogCategories = cat.categories ?: emptyList(),
                         sellerUserId = cat.sellerId ?: it.sellerUserId,
                         sellerName = if (!cat.sellerName.isNullOrBlank()) cat.sellerName else it.sellerName
                     )
@@ -889,6 +971,18 @@ class PosViewModel(
         }
     }
 
+    // Graba una etiqueta NFC de UN solo producto del catalogo (sticker por producto)
+    fun prepareWriteNfcTagForItem(item: com.example.data.api.VendorCatalogCompactItemDto) {
+        val state = _uiState.value
+        val sellerId = state.sellerUserId ?: state.currentUser?.id.orEmpty()
+        _uiState.update {
+            it.copy(
+                pendingWriteNfcPayload = "tq1:p:$sellerId:${item.code}:1",
+                successMessage = "Acerque una etiqueta NFC (NTAG213/215) al reverso del teléfono para grabarla con \"${item.name}\"."
+            )
+        }
+    }
+
     fun cancelPendingWriteNfcTag() {
         _uiState.update { it.copy(pendingWriteNfcPayload = null, successMessage = null) }
     }
@@ -942,6 +1036,7 @@ class PosViewModel(
                         successMessage = "Sesión iniciada con éxito como @${user?.username ?: username}"
                     )
                 }
+                loadVendorCatalog(sellerId = user?.id)
             }.onFailure { err ->
                 val msg = err.message ?: ""
                 // Si el servidor rechazo por terminal no registrado, enviar a registro
@@ -984,6 +1079,7 @@ class PosViewModel(
                         currentUser = user
                     )
                 }
+                loadVendorCatalog(sellerId = user.id)
             }.onFailure { err ->
                 val hasToken = !repository.apiClient.authToken.isNullOrBlank()
                 _uiState.update {
@@ -1010,6 +1106,12 @@ class PosViewModel(
                     successMessage = "Sesión cerrada correctamente"
                 )
             }
+        }
+    }
+
+    fun toggleMultiVendor(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.toggleMultiVendor(enabled)
         }
     }
 
@@ -1535,11 +1637,31 @@ class PosViewModel(
      * Lookup de usuario por username.
      * Determina el tipo de tarjeta y si requiere documento de identidad.
      */
+    /**
+     * Tap de la tarjeta del CLIENTE en el paso de identificación —
+     * el modelo bancario: la tarjeta dice quién es. Luego documento+PIN
+     * (si la tarjeta lo requiere) verifican al titular.
+     */
+    fun onLookupCardTapped(cardUid: String) {
+        viewModelScope.launch {
+            if (!verifyTerminalStatus()) return@launch
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = repository.cardLookup(cardUid)
+            applyLookupResult(result)
+        }
+    }
+
+    /**
+     * Lookup del cliente por documento de identidad (tipo + número) —
+     * alternativa al tap de tarjeta cuando no puede leerse.
+     */
     fun submitUserLookup() {
         val state = _uiState.value
+        val docNumber = state.lookupDocNumber.ifBlank { state.customerUsername }
+        val docType = state.lookupDocType
 
-        if (state.customerUsername.isBlank()) {
-            _uiState.update { it.copy(errorMessage = "Ingrese el nombre de usuario del cliente") }
+        if (docNumber.isBlank()) {
+            _uiState.update { it.copy(errorMessage = "Ingrese el documento de identidad del cliente (o acerque su tarjeta)") }
             return
         }
 
@@ -1550,19 +1672,31 @@ class PosViewModel(
 
             // Modo demo: simular lookup
             if (state.isDemoNode) {
-                simulateUserLookup(state.customerUsername)
+                simulateUserLookup(docNumber)
                 return@launch
             }
 
-            // Modo real: llamar al servidor
-            val result = repository.userLookup(state.customerUsername)
+            // Modo real: lookup por documento (o username si no hay docType)
+            val byDoc = docType.isNotBlank()
+            val result = if (byDoc) {
+                repository.userLookup(docType = docType, docNumber = docNumber)
+            } else {
+                repository.userLookup(username = docNumber)
+            }
+            applyLookupResult(result, identifiedByDoc = byDoc)
+        }
+    }
 
+    private fun applyLookupResult(result: Result<UserLookupResponse>, identifiedByDoc: Boolean = false) {
+        viewModelScope.launch {
             result.onSuccess { resp ->
                 if (resp.found) {
                     // Step numbering:
-                    // Classic (requiresDocument=true):  1=Monto, 2=Username, 3=Doc, 4=PIN, 5=Tap
-                    // UID/DESFire (requiresDocument=false): 1=Monto, 2=Username, 3=PIN, 4=Tap
-                    val pinStep = if (resp.requiresDocument) 4 else 3
+                    // Classic (requiresDocument=true):  1=Monto, 2=Ident, 3=Doc, 4=PIN, 5=Tap
+                    // UID/DESFire (requiresDocument=false): 1=Monto, 2=Ident, 3=PIN, 4=Tap
+                    // Si el lookup ya fue por documento, la identidad quedó
+                    // verificada → saltar el paso de documento.
+                    val pinStep = if (resp.requiresDocument && !identifiedByDoc) 4 else 3
                     // Si el servidor envia required_doc_type, pre-seleccionarlo
                     // Si no, usar el primer tipo de document_types, o mantener el default
                     val preSelectedDocType = when {
@@ -1602,11 +1736,16 @@ class PosViewModel(
                     if (!handleKeyMismatch()) {
                         return@launch
                     }
-                    // Si la auto-renovacion tuvo exito, reintentar el user-lookup
-                    val retryResult = repository.userLookup(state.customerUsername)
+                    // Si la auto-renovacion tuvo exito, reintentar el lookup
+                    val s = _uiState.value
+                    val retryResult = if (identifiedByDoc) {
+                        repository.userLookup(docType = s.lookupDocType, docNumber = s.lookupDocNumber)
+                    } else {
+                        repository.userLookup(username = s.customerUsername)
+                    }
                     retryResult.onSuccess { resp ->
                         if (resp.found) {
-                            val pinStep = if (resp.requiresDocument) 4 else 3
+                            val pinStep = if (resp.requiresDocument && !identifiedByDoc) 4 else 3
                             val preSelectedDocType = when {
                                 !resp.requiredDocType.isNullOrEmpty() -> resp.requiredDocType
                                 !resp.documentTypes.isNullOrEmpty() -> resp.documentTypes.first()
@@ -2713,6 +2852,17 @@ class PosViewModel(
     fun hasShiftPin(callback: (Boolean) -> Unit) {
         viewModelScope.launch {
             callback(repository.hasShiftPin())
+        }
+    }
+
+    fun verifySettingsPin(pin: String, callback: (Boolean, String?, Boolean) -> Unit) {
+        viewModelScope.launch {
+            val res = repository.verifySettingsPin(pin)
+            res.onSuccess { (valid, offline) ->
+                callback(valid, null, offline)
+            }.onFailure { err ->
+                callback(false, err.message, false)
+            }
         }
     }
 

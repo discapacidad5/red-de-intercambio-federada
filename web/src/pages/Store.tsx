@@ -1197,19 +1197,23 @@ export default function Store() {
             </div>
           )}
 
-          {items.filter((i: any) => !catFilter || i.category === catFilter).length === 0 && !showForm ? (
+          {items.filter((i: any) => !catFilter || i.category === catFilter || (Array.isArray(i.categories) && i.categories.includes(catFilter))).length === 0 && !showForm ? (
             <div className="card text-center text-gray-500 py-8">
               <p>{t('store_empty', 'Tu tienda esta vacia.')}</p>
               <p className="text-xs mt-2">{t('store_empty_hint', 'Agrega productos del registro global con el boton de arriba.')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {items.filter((i: any) => !catFilter || i.category === catFilter).map((item, i) => {
+              {items.filter((i: any) => !catFilter || i.category === catFilter || (Array.isArray(i.categories) && i.categories.includes(catFilter))).map((item, i) => {
                 const product = products.find((p) => p.id === item.product_id)
                 const displayPrice = item.final_price || item.price_trueque || product?.price_trueque || 0
                 const baseP = item.base_price || item.price_trueque || product?.price_trueque || 0
                 const extras = item.extra_costs || 0
                 const unit = item.unit || product?.unit || 'unidad'
+                const qtyPerUnit = item.quantity_per_unit && item.quantity_per_unit > 0 ? item.quantity_per_unit : 1
+                const unitLabel = qtyPerUnit !== 1 && !(unit === 'saco' && item.weight_kg && Math.abs(qtyPerUnit - item.weight_kg) < 0.001)
+                  ? `${qtyPerUnit} ${unit}`
+                  : unit
                 const isComposite = !item.product_id && item.extra_description
                 return (
                   <div key={i} className="card">
@@ -1233,7 +1237,7 @@ export default function Store() {
                           const cat = e.target.value.trim()
                           if (cat !== (item.category || '')) {
                             api.put(`/store/items/${item.id}/category`, { category: cat, parent_category: item.parent_category || '', subcategory: item.subcategory || '' })
-                              .then(() => setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, category: cat } : i)))
+                              .then(() => { load(); loadCats() })
                               .catch((err: any) => setError(err.message || 'Error'))
                           }
                         }}
@@ -1259,7 +1263,7 @@ export default function Store() {
                     <div className="mt-3 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-lg font-bold text-trueque-700">{fmtTQ(displayPrice)} {currency}</span>
-                        <span className="text-xs text-gray-500">por {unit}</span>
+                        <span className="text-xs text-gray-500">por {unitLabel}</span>
                       </div>
                       {extras > 0 && !isComposite && (
                         <div className="text-xs text-gray-500 bg-amber-50 rounded px-2 py-1">
@@ -1309,13 +1313,21 @@ export default function Store() {
                     <div className="flex gap-2 mt-3 flex-wrap">
                       <button
                         onClick={() => {
+                          const initQty = (item.unit === 'saco' && item.weight_kg && Math.abs((item.quantity_per_unit || 1) - item.weight_kg) < 0.001)
+                            ? 1
+                            : (item.quantity_per_unit || 1)
+                          const initCats = Array.isArray(item.categories) && item.categories.length > 0
+                            ? item.categories
+                            : (item.category ? [item.category] : [])
                           setEditingItem(editingItem === item.id ? null : item.id)
                           setEditForm({
                             product_name: item.product_name || product?.name || '',
                             description: item.description || product?.description || '',
                             category: item.category || '',
+                            categories: initCats,
                             unit: item.unit || product?.unit || 'unidad',
-                            quantity_per_unit: item.quantity_per_unit || 1,
+                            quantity_per_unit: initQty,
+                            sell_qty: initQty,
                             price_trueque: displayPrice / 100,
                             stock: item.stock || 0,
                             is_service: !!item.is_service,
@@ -1357,9 +1369,14 @@ export default function Store() {
                                   key={c.id || c.name}
                                   type="button"
                                   onClick={() => setEditForm((f: any) => {
-                                    const cats = new Set(f.categories || (f.category ? [f.category] : []))
-                                    cats.has(c.name) ? cats.delete(c.name) : cats.add(c.name)
-                                    const arr = [...cats]
+                                    const current = Array.isArray(f.categories) ? [...f.categories] : (f.category ? [f.category] : [])
+                                    let arr: string[]
+                                    if (current.includes(c.name)) {
+                                      arr = current.filter((x) => x !== c.name)
+                                    } else {
+                                      // Poner la categoría recién elegida como principal (primera)
+                                      arr = [c.name, ...current.filter((x) => x !== c.name)]
+                                    }
                                     return { ...f, categories: arr, category: arr[0] || '' }
                                   })}
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
@@ -1416,7 +1433,10 @@ export default function Store() {
                                           key={o.unit}
                                           type="button"
                                           onClick={() => setEditForm((f: any) => ({
-                                            ...f, unit: o.unit, quantity_per_unit: o.base,
+                                            ...f,
+                                            unit: o.unit,
+                                            sell_qty: 1,
+                                            quantity_per_unit: 1,
                                             price_trueque: derivedPrice > 0 ? derivedPrice : f.price_trueque,
                                           }))}
                                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
@@ -1432,19 +1452,21 @@ export default function Store() {
                                   {/* Cantidad por presentación: eliges unidad + cuántos */}
                                   {editForm.unit && (
                                     <div className="mt-2">
-                                      <label className="label !text-[10px]">{t('store_sell_qty', `Cantidad por ${editForm.unit} (ej: 5 kg, 500 g)`)}</label>
+                                      <label className="label !text-[10px]">{t('store_sell_qty', `Cantidad de ${editForm.unit} por venta (ej: 1 saco, 5 kg, 500 g)`)}</label>
                                       <input
                                         type="number" step="0.001" min={0} className="input !py-0.5 text-xs"
-                                        value={editForm.sell_qty || 1}
+                                        value={editForm.sell_qty ?? editForm.quantity_per_unit ?? 1}
                                         onChange={(e) => {
                                           const q = parseFloat(e.target.value) || 0
                                           const baseUnits = opts.find((o) => o.unit === editForm.unit)?.base || 1
                                           setEditForm((f: any) => ({
-                                            ...f, sell_qty: q, quantity_per_unit: baseUnits * q,
-                                            price_trueque: item.price_per_kg > 0 ? +(item.price_per_kg * baseUnits * q).toFixed(4) : f.price_trueque,
+                                            ...f,
+                                            sell_qty: q,
+                                            quantity_per_unit: q > 0 ? q : 1,
+                                            price_trueque: ppk > 0 ? +(ppk * baseUnits * (q > 0 ? q : 1)).toFixed(4) : f.price_trueque,
                                           }))
                                         }}
-                                        placeholder="Ej: 5"
+                                        placeholder="Ej: 1, 5, 500"
                                       />
                                     </div>
                                   )}
@@ -1453,7 +1475,7 @@ export default function Store() {
                               })()}
                               {editForm.unit && item.price_per_kg > 0 && (
                                 <p className="text-[10px] font-bold text-emerald-800 mt-1">
-                                  {t('store_computed_price', 'Precio calculado:')} {editForm.price_trueque} {currency} por {editForm.quantity_per_unit || 1} {editForm.unit}
+                                  {t('store_computed_price', 'Precio calculado DESDE LA FEDERACIÓN:')} {editForm.price_trueque} {currency} por {editForm.quantity_per_unit || 1} {editForm.unit}
                                 </p>
                               )}
                             </div>
@@ -1491,7 +1513,8 @@ export default function Store() {
                               setEditSaving(true)
                               try {
                                 await api.put(`/store/items/${item.id}`, { ...editForm, price_trueque: toCents(editForm.price_trueque) })
-                                setItems(prev => prev.map((i: any) => i.id === item.id ? { ...i, ...editForm } : i))
+                                await load()
+                                await loadCats()
                                 setEditingItem(null)
                                 setSuccessMsg(t('store_item_updated', 'Producto actualizado'))
                               } catch (e: any) { setError(e.message || 'Error') } finally { setEditSaving(false) }

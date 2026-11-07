@@ -17,6 +17,13 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.security.MessageDigest
 
+/**
+ * Marca un rechazo EXPLÍCITO del servidor (respondió con código de error),
+ * a diferencia de un fallo de red/conexión donde no hubo respuesta.
+ * Solo los rechazos explícitos pueden desconectar al punto de venta.
+ */
+class ServerRejectedException(message: String, val httpCode: Int = 0) : Exception(message)
+
 class PosRepository(
     private val context: Context,
     private val database: AppDatabase,
@@ -26,6 +33,7 @@ class PosRepository(
     val shiftDao: ShiftDao = database.shiftDao()
     val shiftPinDao: ShiftPinDao = database.shiftPinDao()
     val terminalConfigDao: TerminalConfigDao = database.terminalConfigDao()
+    val catalogDao: CatalogDao = database.catalogDao()
 
     // Salt fijo para el hash local del PIN del turno (offline fallback).
     // No es lo mismo que el bcrypt del backend — es solo para verificación offline.
@@ -55,6 +63,44 @@ class PosRepository(
 
     private var currentUser: UserMeResponse? = null
     private var cachedSharedKey: ByteArray? = null
+
+    private val userJsonAdapter by lazy { apiClient.moshi.adapter(UserMeResponse::class.java) }
+
+    // Persiste el perfil del usuario en terminal_config para uso offline.
+    private suspend fun persistCachedUser(user: UserMeResponse?) = withContext(Dispatchers.IO) {
+        try {
+            val config = getConfigSecure() ?: return@withContext
+            saveConfigSecure(config.copy(cachedUserJson = if (user != null) userJsonAdapter.toJson(user) else null))
+        } catch (_: Exception) {}
+    }
+
+    // Restaura el perfil en caché (para navegar offline tras reiniciar la app).
+    suspend fun restoreCachedUser(): UserMeResponse? = withContext(Dispatchers.IO) {
+        currentUser?.let { return@withContext it }
+        try {
+            val json = getConfigSecure()?.cachedUserJson ?: return@withContext null
+            currentUser = userJsonAdapter.fromJson(json)
+            currentUser
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Limpia SOLO la sesión de usuario (token + perfil en caché).
+     * NO toca el registro del terminal ni sus claves — eso solo cambia
+     * cuando el servidor desconoce explícitamente al terminal.
+     */
+    suspend fun clearLocalSession() = withContext(Dispatchers.IO) {
+        try {
+            val config = getConfigSecure()
+            if (config != null) {
+                saveConfigSecure(config.copy(sessionToken = null, cachedUserJson = null))
+            }
+        } catch (_: Exception) {}
+        apiClient.authToken = null
+        currentUser = null
+    }
 
     // Guardar config con la clave privada encriptada
     private suspend fun saveConfigSecure(config: TerminalConfigEntity) = withContext(Dispatchers.IO) {
@@ -144,7 +190,8 @@ class PosRepository(
                 terminalPrivateKeyHex = keyPair.privateKeyHex,
                 terminalPublicKeyHex = keyPair.publicKeyHex,
                 serverPublicKeyHex = null,
-                sessionToken = null
+                sessionToken = null,
+                cachedUserJson = null
             )
             saveConfigSecure(reset)
             cachedSharedKey = null
@@ -216,7 +263,8 @@ class PosRepository(
             } else {
                 val errBody = response.errorBody()?.string() ?: response.body()?.error ?: "Error desconocido"
                 android.util.Log.d("PosRepository", "autoRenewKeys: FAILED — $errBody")
-                Result.failure(Exception("Auto-renovación falló: $errBody"))
+                // El servidor rechazó explícitamente la renovación (no es un fallo de red)
+                Result.failure(ServerRejectedException("Auto-renovación falló: $errBody", response.code()))
             }
         } catch (e: Exception) {
             Result.failure(Exception("Error de conexión en auto-renovación: ${e.localizedMessage}"))
@@ -374,15 +422,13 @@ class PosRepository(
     }
 
     suspend fun logout() = withContext(Dispatchers.IO) {
-        val currentConfig = getOrInitTerminalConfig()
-        saveConfigSecure(currentConfig.copy(sessionToken = null))
-        apiClient.authToken = null
-        currentUser = null
+        clearLocalSession()
     }
 
     suspend fun fetchCurrentUser(): Result<UserMeResponse> = withContext(Dispatchers.IO) {
         try {
             if (apiClient.authToken.isNullOrBlank()) {
+                // Sin token local no hay sesión que refrescar
                 currentUser = null
                 return@withContext Result.failure(Exception("Sin sesión activa"))
             }
@@ -390,22 +436,34 @@ class PosRepository(
             val response = service.getMe()
             if (response.isSuccessful && response.body() != null) {
                 currentUser = response.body()
+                persistCachedUser(currentUser)
                 Result.success(currentUser!!)
             } else {
+                val errBody = response.errorBody()?.string() ?: ""
                 if (response.code() == 401) {
-                    // Token expired or invalid on server
-                    val currentConfig = getOrInitTerminalConfig()
-                    saveConfigSecure(currentConfig.copy(sessionToken = null))
-                    apiClient.authToken = null
-                    currentUser = null
+                    // El servidor rechazó explícitamente el token (expirado/inválido).
+                    // Único caso donde la sesión se invalida localmente.
+                    clearLocalSession()
+                } else if (response.code() == 403 &&
+                    (errBody.contains("not_authorized_for_terminal") || errBody.contains("terminal_not_registered"))) {
+                    // REVOCACIÓN EXPLÍCITA DEL SERVIDOR: el operador fue
+                    // desautorizado en este punto (o el terminal desregistrado).
+                    // Desconectar al operador — mismo modelo que el 401.
+                    val msg = if (errBody.contains("not_authorized_for_terminal"))
+                        "El servidor desautorizó a este operador en el punto. Inicie sesión con un usuario autorizado."
+                    else
+                        "El servidor ya no reconoce este terminal. Debe registrarse nuevamente."
+                    apiClient.onAuthRejected?.invoke(msg)
                 }
-                val err = response.errorBody()?.string() ?: "Error obteniendo datos del usuario (${response.code()})"
+                val err = errBody.ifBlank { "Error obteniendo datos del usuario (${response.code()})" }
                 Result.failure(Exception(err))
             }
         } catch (e: Exception) {
-            // Keep existing currentUser if network temporarily fails
-            if (currentUser != null) {
-                Result.success(currentUser!!)
+            // Sin conexión: la sesión NO se invalida. Devolver el perfil en
+            // caché (memoria o DB) para seguir operando en modo offline.
+            val cached = currentUser ?: restoreCachedUser()
+            if (cached != null) {
+                Result.success(cached)
             } else {
                 Result.failure(Exception("Error al contactar al nodo: ${e.localizedMessage}"))
             }
@@ -448,30 +506,96 @@ class PosRepository(
         VendorCatalogCompactItemDto(id = "demo-item-4", productId = "demo-prod-4", code = "10004", name = "Miel Pura de Conuco", category = "Apicultura", unit = "L", priceCents = 1000L, stock = 12L, isService = false)
     )
 
+    private fun VendorCatalogCompactItemDto.toEntity(seller: String) = CatalogItemEntity(
+        id = id, sellerId = seller, productId = productId, code = code, name = name,
+        category = category, unit = unit, priceCents = priceCents, stock = stock,
+        isService = isService, isUniversal = isUniversal, iconUrl = iconUrl
+    )
+
+    private fun CatalogItemEntity.toDto() = VendorCatalogCompactItemDto(
+        id = id, productId = productId, code = code, name = name, category = category,
+        unit = unit, priceCents = priceCents, stock = stock, isService = isService,
+        isUniversal = isUniversal, iconUrl = iconUrl
+    )
+
+    // Catalogo desde el cache local (descargado previamente del servidor)
+    private suspend fun cachedCatalog(sellerId: String?): VendorCatalogResponseDto? {
+        val seller = sellerId ?: currentUser?.id ?: restoreCachedUser()?.id ?: ""
+        val cached = catalogDao.getBySeller(seller)
+        if (cached.isEmpty()) return null
+        val prefs = context.getSharedPreferences("pos_catalog_meta", android.content.Context.MODE_PRIVATE)
+        val savedCatsStr = prefs.getString(catalogCategoriesKey(seller), null)
+        val savedCats = savedCatsStr?.split("\n")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?: cached.map { it.category.trim() }.filter { it.isNotEmpty() }.distinct()
+        return VendorCatalogResponseDto(
+            versionEtag = "local-cache",
+            sellerId = seller.ifBlank { "demo-seller" },
+            sellerName = currentUser?.displayName ?: currentUser?.username ?: "Mi Tienda",
+            categories = savedCats,
+            items = cached.map { it.toDto() }
+        )
+    }
+
+    private fun catalogEtagKey(seller: String) = "catalog_etag_$seller"
+    private fun catalogCategoriesKey(seller: String) = "catalog_cats_$seller"
+
     suspend fun fetchVendorCatalog(
         sellerId: String? = null,
         sellerCardUid: String? = null
     ): Result<VendorCatalogResponseDto> = withContext(Dispatchers.IO) {
+        val effectiveSeller = sellerId ?: currentUser?.id ?: restoreCachedUser()?.id ?: ""
+        val prefs = context.getSharedPreferences("pos_catalog_meta", android.content.Context.MODE_PRIVATE)
+        val storedEtag = prefs.getString(catalogEtagKey(effectiveSeller), null)
         try {
             val service = apiClient.getService()
-            val res = service.getVendorCatalog(sellerId = sellerId, sellerCardUid = sellerCardUid)
+            // Sync delta: enviar el seller_id efectivo y el etag conocido
+            val res = service.getVendorCatalog(
+                sellerId = effectiveSeller.ifBlank { null },
+                sellerCardUid = sellerCardUid,
+                etag = storedEtag
+            )
+            if (res.code() == 304) {
+                return@withContext Result.success(
+                    cachedCatalog(effectiveSeller) ?: VendorCatalogResponseDto(
+                        versionEtag = storedEtag ?: "empty",
+                        sellerId = effectiveSeller.ifBlank { "demo-seller" },
+                        sellerName = currentUser?.displayName ?: currentUser?.username ?: "Tienda del Vendedor",
+                        items = defaultDemoCatalog
+                    )
+                )
+            }
             if (res.isSuccessful && res.body() != null && res.body()!!.items.isNotEmpty()) {
-                Result.success(res.body()!!)
+                val resp = res.body()!!
+                val saveSellerKey = effectiveSeller.ifBlank { resp.sellerId ?: "" }
+                // Persistir en cache local: items + categorías de la tienda
+                catalogDao.replaceSellerCatalog(effectiveSeller, resp.items.map { it.toEntity(effectiveSeller) })
+                val edit = prefs.edit()
+                resp.versionEtag?.let { edit.putString(catalogEtagKey(effectiveSeller), it) }
+                resp.categories?.let { cats ->
+                    edit.putString(catalogCategoriesKey(effectiveSeller), cats.joinToString("\n"))
+                    if (saveSellerKey.isNotBlank() && saveSellerKey != effectiveSeller) {
+                        edit.putString(catalogCategoriesKey(saveSellerKey), cats.joinToString("\n"))
+                    }
+                }
+                edit.apply()
+                Result.success(resp)
             } else {
+                // Sin respuesta util del servidor: usar cache local si existe
                 Result.success(
-                    VendorCatalogResponseDto(
+                    cachedCatalog(effectiveSeller) ?: VendorCatalogResponseDto(
                         versionEtag = "local-fallback",
-                        sellerId = sellerId ?: currentUser?.id ?: "demo-seller",
+                        sellerId = effectiveSeller.ifBlank { "demo-seller" },
                         sellerName = currentUser?.displayName ?: currentUser?.username ?: "Tienda del Vendedor",
                         items = defaultDemoCatalog
                     )
                 )
             }
         } catch (e: Exception) {
+            // Sin conexión: servir el cache local; demo solo si nunca se sincronizo
             Result.success(
-                VendorCatalogResponseDto(
+                cachedCatalog(effectiveSeller) ?: VendorCatalogResponseDto(
                     versionEtag = "offline-fallback",
-                    sellerId = sellerId ?: currentUser?.id ?: "demo-seller",
+                    sellerId = effectiveSeller.ifBlank { "demo-seller" },
                     sellerName = currentUser?.displayName ?: currentUser?.username ?: "Tienda del Vendedor",
                     items = defaultDemoCatalog
                 )
@@ -1736,24 +1860,44 @@ class PosRepository(
      * Lookup de usuario por username.
      * Retorna el tipo de tarjeta y si requiere documento de identidad.
      */
-    suspend fun userLookup(username: String): Result<UserLookupResponse> = withContext(Dispatchers.IO) {
+    /**
+     * Lookup del cliente: por username, por documento de identidad o por
+     * UID de tarjeta NFC (el modelo bancario — la tarjeta identifica).
+     * Retorna tipo de tarjeta y si requiere documento.
+     */
+    suspend fun userLookup(username: String = "", docType: String = "", docNumber: String = ""): Result<UserLookupResponse> =
+        lookupWithPayload(
+            endpoint = "nfc/terminal/user-lookup",
+            payloadJson = apiClient.moshi.adapter(UserLookupDecryptedPayload::class.java).toJson(
+                UserLookupDecryptedPayload(
+                    terminalId = getOrInitTerminalConfig().terminalId,
+                    username = username.trim().lowercase(),
+                    docType = docType.trim(),
+                    docNumber = docNumber.trim()
+                )
+            )
+        )
+
+    suspend fun cardLookup(cardUid: String): Result<UserLookupResponse> =
+        lookupWithPayload(
+            endpoint = "nfc/terminal/card-lookup",
+            payloadJson = apiClient.moshi.adapter(CardLookupDecryptedPayload::class.java).toJson(
+                CardLookupDecryptedPayload(
+                    terminalId = getOrInitTerminalConfig().terminalId,
+                    cardUid = cardUid.uppercase()
+                )
+            )
+        )
+
+    private suspend fun lookupWithPayload(endpoint: String, payloadJson: String): Result<UserLookupResponse> = withContext(Dispatchers.IO) {
         try {
             val config = getOrInitTerminalConfig()
             val serverPubKey = config.serverPublicKeyHex
                 ?: return@withContext Result.failure(Exception("Terminal no registrado: sin clave pública del servidor"))
 
-            android.util.Log.d("PosRepository", "userLookup: terminalId=${config.terminalId} username=${username.trim().lowercase()} serverUrl=${apiClient.serverUrl}")
-            android.util.Log.d("PosRepository", "userLookup: serverPubKey=${serverPubKey.take(16)}... terminalPubKey=${config.terminalPublicKeyHex?.take(16) ?: "null"}...")
+            android.util.Log.d("PosRepository", "lookup: endpoint=$endpoint terminalId=${config.terminalId} serverUrl=${apiClient.serverUrl}")
 
-            val payload = UserLookupDecryptedPayload(
-                terminalId = config.terminalId,
-                username = username.trim().lowercase()
-            )
-
-            val adapter = apiClient.moshi.adapter(UserLookupDecryptedPayload::class.java)
-            val jsonPlain = adapter.toJson(payload)
-
-            android.util.Log.d("PosRepository", "userLookup: terminalId=${config.terminalId} username=${payload.username} serverUrl=${apiClient.serverUrl}")
+            val jsonPlain = payloadJson
 
             val (ephemeralMsg, ephemeralSharedKey) = CryptoEngine.encryptPayloadEphemeral(
                 plaintextJson = jsonPlain,
@@ -1776,7 +1920,10 @@ class PosRepository(
                 )
             )
 
-            val response = service.userLookup(request)
+            val response = when (endpoint) {
+                "nfc/terminal/card-lookup" -> service.cardLookup(request)
+                else -> service.userLookup(request)
+            }
             if (response.isSuccessful && response.body()?.ciphertext != null) {
                 val encResp = response.body()!!
                 val plainResp = CryptoEngine.decryptResponseEphemeral(
@@ -2106,6 +2253,38 @@ class PosRepository(
     /**
      * Consulta si el dueño ha configurado el PIN del turno en el backend.
      */
+    /**
+     * Verifica el PIN de Ajustes. Prioriza el admin-pin del servidor nuevo;
+     * si el endpoint no existe (servidor viejo) o no está configurado,
+     * cae al PIN de turno. Offline: usa el hash local del PIN de turno.
+     */
+    suspend fun verifySettingsPin(pin: String): Result<Pair<Boolean, Boolean>> = withContext(Dispatchers.IO) {
+        try {
+            val config = getOrInitTerminalConfig()
+            val res = apiClient.getService().verifyAdminPin(config.terminalId, VerifyShiftPinRequest(pin))
+            if (res.isSuccessful) {
+                val body = res.body()
+                if (body != null && !body.configured) {
+                    return@withContext verifyShiftPin(pin)
+                }
+                return@withContext Result.success((body?.valid == true) to false)
+            }
+            if (res.code() == 404) return@withContext verifyShiftPin(pin)
+            Result.failure(Exception("Error al verificar PIN de ajustes (HTTP ${res.code()})"))
+        } catch (e: Exception) {
+            val localValid = verifyShiftPinLocal(pin)
+            if (localValid) {
+                Result.success(true to true)
+            } else {
+                val hasCache = shiftPinDao.getPin() != null
+                Result.failure(Exception(
+                    if (hasCache) "PIN incorrecto (sin conexión)"
+                    else "Sin conexión y no hay PIN guardado localmente."
+                ))
+            }
+        }
+    }
+
     /**
      * Consulta si el dueño ha configurado el PIN del turno.
      * - Online: consulta al backend.

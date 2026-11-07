@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -404,7 +406,21 @@ func (eh *ExternalHandler) listStoreItems(w http.ResponseWriter, r *http.Request
 				filtered = append(filtered, it)
 			}
 		}
-		items = filtered
+		// Si el usuario autenticado es admin/super_admin y su ID no coincide con el owner_id
+		// backfilleado de la tienda del nodo, mostrar todos los ítems activos del nodo.
+		if len(filtered) == 0 && r.URL.Query().Get("owner_id") == "" {
+			var isAdmin bool
+			_ = eh.Pool.QueryRow(r.Context(), `
+				SELECT EXISTS(
+					SELECT 1 FROM users
+					WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))
+				)`, *filterOwnerID).Scan(&isAdmin)
+			if !isAdmin {
+				items = filtered
+			}
+		} else {
+			items = filtered
+		}
 	}
 
 	// Incluir automaticamente los servicios universales (ej: Trabajo en el Conuco / Mano Vuelta)
@@ -630,13 +646,9 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 	category := req.Category
 	origin := req.Origin
 	unit := req.Unit
-	// quantity_per_unit: la pedida, o el peso del padre (saco=25kg → 25
-	// para dosificar kg/g del contenedor — sin eso el precio/kg divide mal)
+	// quantity_per_unit: cantidad de unidades de venta por presentación (por defecto 1).
 	quantityPerUnit := req.QuantityPerUnit
-	if quantityPerUnit == 0 && productID != nil {
-		_ = eh.Pool.QueryRow(r.Context(), `SELECT COALESCE(weight_kg,0) FROM products WHERE id = $1`, *productID).Scan(&quantityPerUnit)
-	}
-	if quantityPerUnit == 0 {
+	if quantityPerUnit <= 0 {
 		quantityPerUnit = 1
 	}
 	priceTrueque := req.PriceTrueque
@@ -646,26 +658,52 @@ func (eh *ExternalHandler) addStoreItem(w http.ResponseWriter, r *http.Request) 
 	extraDescription := req.ExtraDescription
 
 	if productID != nil {
-		var pname, pdesc, pcat, punit, porigin string
-		var pprice float64
-		err := eh.Pool.QueryRow(r.Context(),
-			`SELECT name, COALESCE(description,''), category, unit, origin, price_per_unit
-			 FROM products WHERE id = $1`, *productID).Scan(
-			&pname, &pdesc, &pcat, &punit, &porigin, &pprice)
+		var pname, pdesc, pcat, punit, porigin, pBaseUnit string
+		var pprice, pPricePerKg, pWeightKg float64
+		err := eh.Pool.QueryRow(r.Context(), `
+			SELECT
+				COALESCE(fed.name, p.name),
+				COALESCE(NULLIF(fed.description,''), COALESCE(p.description,'')),
+				COALESCE(NULLIF(fed.category,''), p.category),
+				COALESCE(NULLIF(fed.unit,''), p.unit),
+				COALESCE(p.origin, 'internal'),
+				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.base_unit,''), NULLIF(p.base_unit,''), 'kg')
+			FROM products p
+			LEFT JOIN LATERAL (
+				SELECT f.name, f.description, f.category, f.unit, f.price_per_unit, f.price_per_kg, f.weight_kg, f.base_unit
+				FROM products f
+				WHERE f.node_domain = '__FEDERATION__' AND f.is_active = true
+				  AND (
+				    (COALESCE(p.catalog_key, '') <> '' AND f.catalog_key = p.catalog_key)
+				    OR (COALESCE(p.product_code, '') <> '' AND f.product_code = p.product_code)
+				    OR LOWER(TRIM(f.name)) = LOWER(TRIM(p.name))
+				  )
+				ORDER BY (f.catalog_key = p.catalog_key) DESC
+				LIMIT 1
+			) fed ON true
+			WHERE p.id = $1`, *productID).Scan(
+			&pname, &pdesc, &pcat, &punit, &porigin, &pprice, &pPricePerKg, &pWeightKg, &pBaseUnit)
 		if err == nil {
 			productName = pname
-			description = pdesc
-			category = pcat
+			if description == "" {
+				description = pdesc
+			}
+			if category == "" {
+				category = pcat
+			}
 			origin = porigin
 			if unit == "" {
 				unit = punit
 			}
-			if priceTrueque == 0 {
-				priceTrueque = pprice
-			}
-			// Si no se enviaron precios calculados, usar el del catalogo
-			if basePrice == 0 {
-				basePrice = pprice
+			// Derivar precio exacto desde la Federación según unidad y cantidad
+			computedCents := db.ComputeVariantPriceCents(pprice, pPricePerKg, pWeightKg, punit, pBaseUnit, unit, quantityPerUnit)
+			if computedCents > 0 {
+				basePrice = computedCents
+				priceTrueque = computedCents + extraCosts
+				finalPrice = priceTrueque
 			}
 		}
 	}
@@ -803,46 +841,64 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 		return
 	}
 	// Une: categorías creadas + categorías ya usadas por los items del dueño
-	// (un item del catálogo puede traer su categoría sin que el dueño la cree —
-	// debe aparecer igual en la lista para filtrar/asignar)
+	// (incluyendo multi-categorías en si.categories y vista admin del nodo)
 	rows, err := eh.Pool.Query(r.Context(), `
-		SELECT sc.id, sc.name, 'created' AS src, COALESCE(sc.show_in_pos, true)
-		FROM store_categories sc
-		WHERE sc.owner_id = $1
-		   OR sc.owner_id IN (SELECT organization_id FROM organization_board_members
-		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true)
-		UNION
-		SELECT NULL, si.category, 'items', COALESCE(sc2.show_in_pos, true)
-		FROM store_items si
-		LEFT JOIN store_categories sc2
-		       ON sc2.owner_id = COALESCE(si.owner_id, $1) AND sc2.name = si.category
-		WHERE (si.owner_id = $1 OR si.owner_id IS NULL
-		   OR si.owner_id IN (SELECT organization_id FROM organization_board_members
-		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
-		  AND COALESCE(si.category, '') <> ''
-		  AND si.is_active = true
-		UNION
-		-- Categorías de servicios universales (Trabajo etc.) — la tienda las
-		-- tiene siempre, igual que el POS; el dueño decide su visibilidad
-		SELECT NULL, p.category, 'universal', COALESCE(sc3.show_in_pos, true)
-		FROM products p
-		LEFT JOIN store_categories sc3
-		       ON sc3.owner_id = $1 AND sc3.name = p.category
-		WHERE COALESCE(p.is_universal_service, false) = true
-		  AND COALESCE(p.category, '') <> ''
-		UNION
-		-- Categorías de los productos del catálogo de los items (heredadas —
-		-- el item puede tener si.category vacío pero el producto padre tiene una)
-		SELECT NULL, p2.category, 'items', true
-		FROM store_items si2
-		JOIN products p2 ON p2.id = si2.product_id
-		WHERE (si2.owner_id = $1 OR si2.owner_id IS NULL
-		   OR si2.owner_id IN (SELECT organization_id FROM organization_board_members
-		                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
-		  AND COALESCE(si2.category, '') = ''
-		  AND COALESCE(p2.category, '') <> ''
-		  AND si2.is_active = true
-		ORDER BY name`, userID,
+		WITH is_admin AS (
+			SELECT EXISTS(
+				SELECT 1 FROM users
+				WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))
+			) AS val
+		)
+		SELECT DISTINCT ON (name) id, name, src, show_in_pos FROM (
+			SELECT sc.id, sc.name, 'created' AS src, COALESCE(sc.show_in_pos, true) AS show_in_pos, 1 AS prio
+			FROM store_categories sc, is_admin ia
+			WHERE sc.owner_id = $1
+			   OR ia.val = true
+			   OR sc.owner_id IN (SELECT organization_id FROM organization_board_members
+			                      WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+			UNION ALL
+			SELECT NULL::uuid, si.category, 'items', COALESCE(sc2.show_in_pos, true), 2 AS prio
+			FROM store_items si
+			CROSS JOIN is_admin ia
+			LEFT JOIN store_categories sc2
+			       ON sc2.owner_id = COALESCE(si.owner_id, $1) AND sc2.name = si.category
+			WHERE (si.owner_id = $1 OR si.owner_id IS NULL OR ia.val = true
+			   OR si.owner_id IN (SELECT organization_id FROM organization_board_members
+			                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+			  AND COALESCE(si.category, '') <> ''
+			  AND si.is_active = true
+			UNION ALL
+			SELECT NULL::uuid, TRIM(cat_elem), 'items', COALESCE(sc_arr.show_in_pos, true), 2 AS prio
+			FROM store_items si_arr
+			CROSS JOIN is_admin ia
+			CROSS JOIN LATERAL unnest(COALESCE(si_arr.categories, ARRAY[]::text[])) AS cat_elem
+			LEFT JOIN store_categories sc_arr
+			       ON sc_arr.owner_id = COALESCE(si_arr.owner_id, $1) AND sc_arr.name = TRIM(cat_elem)
+			WHERE (si_arr.owner_id = $1 OR si_arr.owner_id IS NULL OR ia.val = true
+			   OR si_arr.owner_id IN (SELECT organization_id FROM organization_board_members
+			                          WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+			  AND TRIM(cat_elem) <> ''
+			  AND si_arr.is_active = true
+			UNION ALL
+			SELECT NULL::uuid, p.category, 'universal', COALESCE(sc3.show_in_pos, true), 3 AS prio
+			FROM products p
+			LEFT JOIN store_categories sc3
+			       ON sc3.owner_id = $1 AND sc3.name = p.category
+			WHERE COALESCE(p.is_universal_service, false) = true
+			  AND COALESCE(p.category, '') <> ''
+			UNION ALL
+			SELECT NULL::uuid, p2.category, 'items', true, 4 AS prio
+			FROM store_items si2
+			CROSS JOIN is_admin ia
+			JOIN products p2 ON p2.id = si2.product_id
+			WHERE (si2.owner_id = $1 OR si2.owner_id IS NULL OR ia.val = true
+			   OR si2.owner_id IN (SELECT organization_id FROM organization_board_members
+			                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+			  AND COALESCE(si2.category, '') = ''
+			  AND COALESCE(p2.category, '') <> ''
+			  AND si2.is_active = true
+		) all_cats
+		ORDER BY name, prio`, userID,
 	)
 	if err != nil {
 		writeError(w, 500, "failed to list categories")
@@ -994,9 +1050,56 @@ func (eh *ExternalHandler) toggleCategoryVisibility(w http.ResponseWriter, r *ht
 	writeJSON(w, 200, map[string]interface{}{"status": "updated", "show_in_pos": req.ShowInPos})
 }
 
+// ensureStoreItemFromProduct materializa automáticamente una fila en store_items si el ID
+// recibido corresponde a un producto del catálogo o servicio universal que aún no tenía
+// fila propia en store_items, evitando errores 404 al editar o asignar categoría.
+func (eh *ExternalHandler) ensureStoreItemFromProduct(ctx context.Context, itemOrProductID, userID uuid.UUID) uuid.UUID {
+	var existingID uuid.UUID
+	// 1. Verificar si ya existe por store_items.id
+	if err := eh.Pool.QueryRow(ctx, `SELECT id FROM store_items WHERE id = $1`, itemOrProductID).Scan(&existingID); err == nil {
+		return existingID
+	}
+	// 2. Verificar si existe por product_id para este usuario o en la tienda del nodo
+	if err := eh.Pool.QueryRow(ctx, `
+		SELECT id FROM store_items
+		WHERE product_id = $1 AND is_active = true
+		ORDER BY (owner_id = $2) DESC, created_at ASC
+		LIMIT 1`, itemOrProductID, userID).Scan(&existingID); err == nil {
+		return existingID
+	}
+	// 3. Si es un producto válido en products, crear su fila en store_items con id = itemOrProductID
+	var pname, pdesc, pparent, pcat, psub, punit, porigin, pcode string
+	var pprice float64
+	var isUniv, isServ bool
+	err := eh.Pool.QueryRow(ctx, `
+		SELECT name, COALESCE(description,''), COALESCE(parent_category,''), COALESCE(category,''),
+		       COALESCE(subcategory,''), COALESCE(unit,'unidad'), COALESCE(origin,'internal'),
+		       COALESCE(item_code,''), COALESCE(price_per_unit,0),
+		       COALESCE(is_universal_service,false), (COALESCE(item_type,'') = 'service' OR COALESCE(is_universal_service,false) = true)
+		FROM products WHERE id = $1`, itemOrProductID,
+	).Scan(&pname, &pdesc, &pparent, &pcat, &psub, &punit, &porigin, &pcode, &pprice, &isUniv, &isServ)
+	if err != nil {
+		return itemOrProductID
+	}
+	_, _ = eh.Pool.Exec(ctx, `
+		INSERT INTO store_items (
+			id, node_domain, owner_id, product_id, item_code, product_name, description,
+			parent_category, category, subcategory, origin, unit, quantity_per_unit,
+			price_trueque, base_price, extra_costs, final_price, stock, is_active, show_in_pos, is_service
+		) VALUES (
+			$1, $2, $3, $1, NULLIF($4,''), $5, $6,
+			$7, $8, $9, $10, $11, 1,
+			$12, $12, 0, $12, 0, true, true, $13
+		) ON CONFLICT (id) DO NOTHING`,
+		itemOrProductID, eh.NodeDomain, userID, pcode, pname, pdesc,
+		pparent, pcat, psub, porigin, punit, int64(math.Round(pprice)), isServ,
+	)
+	return itemOrProductID
+}
+
 // updateStoreItem edita un item de la tienda: nombre, categoría, unidad,
-// cantidad por unidad (ej: saco = 20 kg → vender 1 kg divide el precio),
-// precio, stock y modo ilimitado (is_service). Solo el dueño o board.
+// cantidad por unidad (ej: saco = 25 kg → vender 1 kg divide el precio),
+// precio, stock y modo ilimitado (is_service). Solo el dueño, board o admin del nodo.
 func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Request) {
 	userID, err := eh.Auth.GetUserID(r)
 	if err != nil || userID == uuid.Nil {
@@ -1008,6 +1111,8 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		writeError(w, 400, "invalid item id")
 		return
 	}
+	itemID = eh.ensureStoreItemFromProduct(r.Context(), itemID, userID)
+
 	var req struct {
 		ProductName     string   `json:"product_name"`
 		Description     string   `json:"description"`
@@ -1036,24 +1141,27 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 	if len(req.Categories) > 0 && primaryCat == "" {
 		primaryCat = req.Categories[0]
 	}
+	if primaryCat != "" && len(categories) == 0 {
+		categories = []string{primaryCat}
+	}
 	res, err := eh.Pool.Exec(r.Context(), `
 		UPDATE store_items SET
-			product_name    = COALESCE(NULLIF($1,''), product_name),
-			description     = COALESCE(NULLIF($2,''), description),
-			category        = $3,
-			categories      = COALESCE($12, categories),
-			parent_category = COALESCE(NULLIF($4,''), parent_category),
-			subcategory     = COALESCE(NULLIF($5,''), subcategory),
-			unit            = COALESCE(NULLIF($6,''), unit),
+			product_name      = COALESCE(NULLIF($1,''), product_name),
+			description       = COALESCE(NULLIF($2,''), description),
+			category          = $3,
+			categories        = $12,
+			parent_category   = COALESCE(NULLIF($4,''), parent_category),
+			subcategory       = COALESCE(NULLIF($5,''), subcategory),
+			unit              = COALESCE(NULLIF($6,''), unit),
 			quantity_per_unit = COALESCE($7, quantity_per_unit),
-			price_trueque   = COALESCE($8, price_trueque),
-			extra_costs     = COALESCE($9, extra_costs),
-			stock           = COALESCE($10, stock),
-			is_service      = COALESCE($11, is_service),
-			updated_at      = NOW()
+			price_trueque     = COALESCE($8, price_trueque),
+			extra_costs       = COALESCE($9, extra_costs),
+			stock             = COALESCE($10, stock),
+			is_service        = COALESCE($11, is_service),
+			updated_at        = NOW()
 		WHERE id = $13 AND (
 			owner_id = $14 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $14 AND is_super_admin = true AND super_admin_enabled = true)
+			OR EXISTS(SELECT 1 FROM users WHERE id = $14 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $14 AND COALESCE(obm.is_active, true) = true)
@@ -1072,6 +1180,53 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 		writeError(w, 404, "item not found or you are not the owner")
 		return
 	}
+
+	// Si el item está vinculado a un producto del catálogo federado, recalcular siempre su
+	// precio exacto desde __FEDERATION__ según la unidad y cantidad configuradas.
+	_, _ = eh.Pool.Exec(r.Context(), `
+		UPDATE store_items si
+		SET base_price = compute_federation_variant_price_cents(
+				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
+			),
+			price_trueque = compute_federation_variant_price_cents(
+				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
+			) + COALESCE(si.extra_costs, 0),
+			final_price = compute_federation_variant_price_cents(
+				COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+				COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+				COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(fed.weight_kg, p.weight_kg, 0),
+				COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+				COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
+			) + COALESCE(si.extra_costs, 0)
+		FROM products p
+		LEFT JOIN LATERAL (
+			SELECT f.price_per_unit, f.price_per_kg, f.unit, f.weight_kg, f.base_unit
+			FROM products f
+			WHERE f.node_domain = '__FEDERATION__' AND f.is_active = true
+			  AND (
+			    (COALESCE(p.catalog_key, '') <> '' AND f.catalog_key = p.catalog_key)
+			    OR (COALESCE(p.product_code, '') <> '' AND f.product_code = p.product_code)
+			    OR LOWER(TRIM(f.name)) = LOWER(TRIM(p.name))
+			  )
+			ORDER BY (f.catalog_key = p.catalog_key) DESC
+			LIMIT 1
+		) fed ON true
+		WHERE si.id = $1 AND si.product_id = p.id`, itemID)
+
 	writeJSON(w, 200, map[string]interface{}{"status": "updated"})
 }
 
@@ -1088,6 +1243,8 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 		writeError(w, 400, "invalid item id")
 		return
 	}
+	itemID = eh.ensureStoreItemFromProduct(r.Context(), itemID, userID)
+
 	var req struct {
 		Category       string `json:"category"`
 		ParentCategory string `json:"parent_category"`
@@ -1097,16 +1254,26 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 		writeError(w, 400, "invalid request body")
 		return
 	}
+	cat := strings.TrimSpace(req.Category)
+	cats := []string{}
+	if cat != "" {
+		cats = []string{cat}
+	}
 	res, err := eh.Pool.Exec(r.Context(), `
-		UPDATE store_items SET category = $1, parent_category = $2, subcategory = $3, updated_at = NOW()
+		UPDATE store_items
+		SET category = $1,
+		    categories = CASE WHEN $1 = '' THEN ARRAY[]::text[] ELSE $6 END,
+		    parent_category = COALESCE(NULLIF($2,''), parent_category),
+		    subcategory = COALESCE(NULLIF($3,''), subcategory),
+		    updated_at = NOW()
 		WHERE id = $4 AND (
 			owner_id = $5 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $5 AND is_super_admin = true AND super_admin_enabled = true)
+			OR EXISTS(SELECT 1 FROM users WHERE id = $5 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $5 AND COALESCE(obm.is_active, true) = true)
 		)`,
-		strings.TrimSpace(req.Category), strings.TrimSpace(req.ParentCategory), strings.TrimSpace(req.Subcategory), itemID, userID,
+		cat, strings.TrimSpace(req.ParentCategory), strings.TrimSpace(req.Subcategory), itemID, userID, cats,
 	)
 	if err != nil {
 		writeError(w, 500, "failed to update category")
@@ -1120,7 +1287,7 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 }
 
 // togglePosVisibility marca si un item de la tienda del dueño aparece en el
-// catálogo del punto de venta (show_in_pos). Solo el dueño puede cambiarlo.
+// catálogo del punto de venta (show_in_pos). Solo el dueño o admin puede cambiarlo.
 func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Request) {
 	itemID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
@@ -1128,10 +1295,14 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		return
 	}
 	userID, err := getUserID(r)
-	if err != nil {
+	if err != nil && eh.Auth != nil {
+		userID, err = eh.Auth.GetUserID(r)
+	}
+	if err != nil || userID == uuid.Nil {
 		writeError(w, 401, "not authenticated")
 		return
 	}
+	itemID = eh.ensureStoreItemFromProduct(r.Context(), itemID, userID)
 
 	var req struct {
 		ShowInPos bool `json:"show_in_pos"`
@@ -1145,7 +1316,7 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()
 		WHERE id = $2 AND (
 			owner_id = $3 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $3 AND is_super_admin = true AND super_admin_enabled = true)
+			OR EXISTS(SELECT 1 FROM users WHERE id = $3 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
 			OR EXISTS(
 				SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
@@ -1288,20 +1459,60 @@ func (eh *ExternalHandler) addCompositeItem(w http.ResponseWriter, r *http.Reque
 		if compositeDesc != "" {
 			compositeDesc += ", "
 		}
-		compositeDesc += fmt.Sprintf("%s x%.4f (%.2f TQ)", c.ComponentName, c.Quantity, subtotal)
+		compositeDesc += fmt.Sprintf("%s x%.4f (%.2f TQ)", c.ComponentName, c.Quantity, subtotal/100.0)
+	}
+	totalPrice = math.Round(totalPrice)
+
+	// Publicar automáticamente el producto compuesto en el nodo local y en la Federación (__FEDERATION__)
+	// para que su precio y composición vivan en la Federación como fuente única de verdad.
+	var compProdIDPtr *uuid.UUID
+	compUnit := strings.TrimSpace(req.Unit)
+	if compUnit == "" {
+		compUnit = "unidad"
+	}
+	compQty := req.QuantityPerUnit
+	if compQty <= 0 {
+		compQty = 1
+	}
+	catKey := db.CatalogItemSlug(req.ProductName)
+	var compProdID uuid.UUID
+	err = eh.Pool.QueryRow(r.Context(), `
+		INSERT INTO products (
+			node_domain, catalog_key, name, description, parent_category, category, subcategory,
+			origin, unit, base_unit, weight_kg, price_per_kg, price_per_unit,
+			is_composite, item_type, is_approved, is_active, created_by
+		) VALUES (
+			$1, $2, $3, $4, COALESCE(NULLIF($5,''), 'Transformacion'), COALESCE(NULLIF($6,''), 'General'), $7,
+			'internal', $8, $8, $9, ROUND(($10::numeric / 100.0) / GREATEST($9::numeric, 0.0001), 4), $10,
+			true, 'composite', true, true, $11
+		)
+		RETURNING id`,
+		eh.NodeDomain, catKey, req.ProductName,
+		func() string {
+			if strings.TrimSpace(req.Description) != "" {
+				return req.Description
+			}
+			return compositeDesc
+		}(),
+		req.ParentCategory, req.Category, req.Subcategory,
+		compUnit, compQty, totalPrice, ownerID,
+	).Scan(&compProdID)
+	if err == nil && compProdID != uuid.Nil {
+		compProdIDPtr = &compProdID
 	}
 
-	// Crear el store item con el precio calculado
+	// Crear el store item con el precio calculado y vinculado al producto de la Federación
 	item, err := eh.Store.AddItem(r.Context(), external.AddStoreItemParams{
 		OwnerID:          ownerID,
+		ProductID:        compProdIDPtr,
 		ProductName:      req.ProductName,
 		Description:      req.Description,
 		ParentCategory:   req.ParentCategory,
 		Category:         req.Category,
 		Subcategory:      req.Subcategory,
 		Origin:           "internal",
-		Unit:             req.Unit,
-		QuantityPerUnit:  req.QuantityPerUnit,
+		Unit:             compUnit,
+		QuantityPerUnit:  compQty,
 		PriceTrueque:     totalPrice,
 		BasePrice:        totalPrice,
 		ExtraCosts:       0,
@@ -1317,7 +1528,7 @@ func (eh *ExternalHandler) addCompositeItem(w http.ResponseWriter, r *http.Reque
 		"product_name": item.ProductName, "description": item.Description, "extra_description": item.ExtraDescription,
 	}, map[string]interface{}{"label": item.ProductName})
 
-	// Guardar la composicion
+	// Guardar la composicion en el store_item y en el producto base
 	for i, c := range req.Components {
 		var componentID *uuid.UUID
 		if c.ComponentProductID != "" {
@@ -1327,14 +1538,20 @@ func (eh *ExternalHandler) addCompositeItem(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		subtotal := c.ComponentPrice * c.Quantity
-		_, err := eh.Pool.Exec(r.Context(),
+		_, _ = eh.Pool.Exec(r.Context(),
 			`INSERT INTO product_compositions (product_id, product_type, component_product_id, component_catalog_key, component_name, component_unit, component_price, quantity, subtotal, component_category, sort_order)
 			 VALUES ($1, 'store_item', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 			item.ID, componentID, c.ComponentCatalogKey, c.ComponentName, c.ComponentUnit, c.ComponentPrice, c.Quantity, subtotal, c.ComponentCategory, i)
-		if err != nil {
-			// No fallar si no se puede guardar la composicion, pero loguear
-			continue
+		if compProdIDPtr != nil {
+			_, _ = eh.Pool.Exec(r.Context(),
+				`INSERT INTO product_compositions (product_id, product_type, component_product_id, component_catalog_key, component_name, component_unit, component_price, quantity, subtotal, component_category, sort_order)
+				 VALUES ($1, 'product', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				*compProdIDPtr, componentID, c.ComponentCatalogKey, c.ComponentName, c.ComponentUnit, c.ComponentPrice, c.Quantity, subtotal, c.ComponentCategory, i)
 		}
+	}
+
+	if compProdIDPtr != nil {
+		_, _ = db.UpsertProductToFederation(r.Context(), eh.Pool, *compProdIDPtr)
 	}
 
 	writeJSON(w, 201, map[string]interface{}{

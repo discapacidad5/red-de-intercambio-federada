@@ -386,20 +386,45 @@ func ValidateAndResolveCart(ctx context.Context, pool *pgxpool.Pool, sellerID uu
 		if in.StoreItemID != "" {
 			if sid, err := uuid.Parse(in.StoreItemID); err == nil {
 				var code, name, unit string
-				var finalPrice, priceTrueque float64
-				var isService, isActive bool
+				var livePriceCents float64
+				var isService, isActive, canSell bool
 				var ownerID *uuid.UUID
 				err := pool.QueryRow(ctx, `
-					SELECT owner_id, product_id, COALESCE(item_code,''), product_name, COALESCE(unit,'unidad'),
-					       COALESCE(final_price, 0), COALESCE(price_trueque, 0), stock, COALESCE(is_service, false), is_active
-					FROM store_items WHERE id = $1`, sid,
-				).Scan(&ownerID, &linkedProductID, &code, &name, &unit, &finalPrice, &priceTrueque, &currentStock, &isService, &isActive)
-				if err == nil && isActive && (ownerID == nil || *ownerID == sellerID || sellerID == uuid.Nil) {
-					p := finalPrice
-					if p <= 0 {
-						p = priceTrueque
-					}
-					unitCents := priceToCents(p)
+					SELECT si.owner_id, si.product_id, COALESCE(si.item_code,''), si.product_name, COALESCE(si.unit,'unidad'),
+					       CASE
+					           WHEN si.product_id IS NOT NULL AND p.id IS NOT NULL THEN
+					               compute_federation_variant_price_cents(
+					                   COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+					                   COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+					                   COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+					                   COALESCE(fed.weight_kg, p.weight_kg, 0),
+					                   COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+					                   COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+					                   COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
+					               ) + COALESCE(si.extra_costs, 0)
+					           ELSE COALESCE(NULLIF(si.final_price, 0), si.price_trueque, 0)
+					       END,
+					       si.stock, COALESCE(si.is_service, false), si.is_active,
+					       (si.owner_id IS NULL OR si.owner_id = $2 OR $2 = '00000000-0000-0000-0000-000000000000'::uuid
+					        OR EXISTS(SELECT 1 FROM users WHERE id = $2 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))))
+					FROM store_items si
+					LEFT JOIN products p ON p.id = si.product_id
+					LEFT JOIN LATERAL (
+						SELECT f.price_per_unit, f.price_per_kg, f.unit, f.weight_kg, f.base_unit
+						FROM products f
+						WHERE f.node_domain = '__FEDERATION__' AND f.is_active = true
+						  AND (
+						    (COALESCE(p.catalog_key, '') <> '' AND f.catalog_key = p.catalog_key)
+						    OR (COALESCE(p.product_code, '') <> '' AND f.product_code = p.product_code)
+						    OR LOWER(TRIM(f.name)) = LOWER(TRIM(p.name))
+						  )
+						ORDER BY (f.catalog_key = p.catalog_key) DESC
+						LIMIT 1
+					) fed ON true
+					WHERE si.id = $1`, sid, sellerID,
+				).Scan(&ownerID, &linkedProductID, &code, &name, &unit, &livePriceCents, &currentStock, &isService, &isActive, &canSell)
+				if err == nil && isActive && canSell {
+					unitCents := priceToCents(livePriceCents)
 					item.StoreItemID = sid.String()
 					if linkedProductID != nil {
 						item.ProductID = linkedProductID.String()
@@ -417,21 +442,44 @@ func ValidateAndResolveCart(ctx context.Context, pool *pgxpool.Pool, sellerID uu
 		if !matched && in.ItemCode != "" && sellerID != uuid.Nil {
 			var sid uuid.UUID
 			var code, name, unit string
-			var finalPrice, priceTrueque float64
+			var livePriceCents float64
 			var isService bool
 			err := pool.QueryRow(ctx, `
-				SELECT id, product_id, COALESCE(item_code,''), product_name, COALESCE(unit,'unidad'),
-				       COALESCE(final_price, 0), COALESCE(price_trueque, 0), stock, COALESCE(is_service, false)
-				FROM store_items
-				WHERE owner_id = $1 AND is_active = true AND item_code = $2
+				SELECT si.id, si.product_id, COALESCE(si.item_code,''), si.product_name, COALESCE(si.unit,'unidad'),
+				       CASE
+				           WHEN si.product_id IS NOT NULL AND p.id IS NOT NULL THEN
+				               compute_federation_variant_price_cents(
+				                   COALESCE(fed.price_per_unit, p.price_per_unit, 0),
+				                   COALESCE(fed.price_per_kg, p.price_per_kg, 0),
+				                   COALESCE(NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				                   COALESCE(fed.weight_kg, p.weight_kg, 0),
+				                   COALESCE(NULLIF(fed.base_unit, ''), NULLIF(p.base_unit, ''), 'kg'),
+				                   COALESCE(NULLIF(si.unit, ''), NULLIF(fed.unit, ''), NULLIF(p.unit, ''), 'unidad'),
+				                   COALESCE(NULLIF(si.quantity_per_unit, 0), 1)
+				               ) + COALESCE(si.extra_costs, 0)
+				           ELSE COALESCE(NULLIF(si.final_price, 0), si.price_trueque, 0)
+				       END,
+				       si.stock, COALESCE(si.is_service, false)
+				FROM store_items si
+				LEFT JOIN products p ON p.id = si.product_id
+				LEFT JOIN LATERAL (
+					SELECT f.price_per_unit, f.price_per_kg, f.unit, f.weight_kg, f.base_unit
+					FROM products f
+					WHERE f.node_domain = '__FEDERATION__' AND f.is_active = true
+					  AND (
+					    (COALESCE(p.catalog_key, '') <> '' AND f.catalog_key = p.catalog_key)
+					    OR (COALESCE(p.product_code, '') <> '' AND f.product_code = p.product_code)
+					    OR LOWER(TRIM(f.name)) = LOWER(TRIM(p.name))
+					  )
+					ORDER BY (f.catalog_key = p.catalog_key) DESC
+					LIMIT 1
+				) fed ON true
+				WHERE si.is_active = true AND si.item_code = $2
+				  AND (si.owner_id = $1 OR EXISTS(SELECT 1 FROM users WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))))
 				LIMIT 1`, sellerID, strings.TrimSpace(in.ItemCode),
-			).Scan(&sid, &linkedProductID, &code, &name, &unit, &finalPrice, &priceTrueque, &currentStock, &isService)
+			).Scan(&sid, &linkedProductID, &code, &name, &unit, &livePriceCents, &currentStock, &isService)
 			if err == nil {
-				p := finalPrice
-				if p <= 0 {
-					p = priceTrueque
-				}
-				unitCents := priceToCents(p)
+				unitCents := priceToCents(livePriceCents)
 				item.StoreItemID = sid.String()
 				if linkedProductID != nil {
 					item.ProductID = linkedProductID.String()

@@ -30,6 +30,7 @@ type StoreItem struct {
 	Description        string     `json:"description"`
 	ParentCategory     string     `json:"parent_category"`
 	Category           string     `json:"category"`
+	Categories         []string   `json:"categories,omitempty"`
 	Subcategory        string     `json:"subcategory"`
 	Origin             string     `json:"origin"`
 	Unit               string     `json:"unit"`
@@ -122,44 +123,69 @@ func (s *Store) AddItem(ctx context.Context, p AddStoreItemParams) (*StoreItem, 
 }
 
 func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, error) {
-	query := `SELECT si.id, si.node_domain, si.owner_id, si.product_id, COALESCE(si.item_code, ''), si.product_name, si.description, si.parent_category, si.category, si.subcategory, si.origin,
+	query := `SELECT si.id, si.node_domain, si.owner_id, si.product_id, COALESCE(si.item_code, ''), si.product_name, si.description, si.parent_category,
+			  COALESCE(NULLIF(si.category, ''), si.categories[1], COALESCE(p.category, '')),
+			  COALESCE(si.categories, ARRAY[]::text[]),
+			  si.subcategory, si.origin,
 			  si.unit, si.quantity_per_unit,
-		  -- Precio consultado EN VIVO de la fuente: siempre la fila
-		  -- __FEDERATION__ (src) — la copia local nunca es autoridad.
-		  -- Conversión por unidad de venta: ppk(TQ) × cant_por_unidad × 100.
+		  -- Precio consultado EN VIVO desde __FEDERATION__ (src) mediante divisiones/multiplicaciones exactas por variante
 		  CASE WHEN si.product_id IS NOT NULL THEN
-		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
-		         THEN COALESCE(src.price_per_unit, p.price_per_unit, 0)
-		         ELSE COALESCE(src.price_per_kg, p.price_per_kg, 0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
-		    END
+		    compute_federation_variant_price_cents(
+		      COALESCE(src.price_per_unit, p.price_per_unit, 0),
+		      COALESCE(src.price_per_kg, p.price_per_kg, 0),
+		      COALESCE(src.weight_kg, p.weight_kg, 0),
+		      COALESCE(src.unit, p.unit, 'unidad'),
+		      COALESCE(src.base_unit, p.base_unit, 'kg'),
+		      si.unit,
+		      si.quantity_per_unit
+		    )
 		  ELSE COALESCE(si.price_trueque,0) END as price_trueque,
 		  COALESCE(src.price_per_unit, p.price_per_unit, si.base_price) as base_price,
 		  si.extra_costs,
 		  CASE WHEN si.product_id IS NOT NULL THEN
-		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
-		         THEN COALESCE(src.price_per_unit, p.price_per_unit, 0)
-		         ELSE COALESCE(src.price_per_kg, p.price_per_kg, 0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
-		    END + COALESCE(si.extra_costs,0)
+		    compute_federation_variant_price_cents(
+		      COALESCE(src.price_per_unit, p.price_per_unit, 0),
+		      COALESCE(src.price_per_kg, p.price_per_kg, 0),
+		      COALESCE(src.weight_kg, p.weight_kg, 0),
+		      COALESCE(src.unit, p.unit, 'unidad'),
+		      COALESCE(src.base_unit, p.base_unit, 'kg'),
+		      si.unit,
+		      si.quantity_per_unit
+		    ) + COALESCE(si.extra_costs,0)
 		  ELSE COALESCE(si.final_price,0) END as final_price,
 		  si.extra_description,
 			  si.stock, COALESCE(si.is_service, false), COALESCE(si.show_in_pos, true), si.is_active, si.external_op_id, si.created_at, si.updated_at,
 			  COALESCE(u.username, '') as owner_name,
-			  COALESCE(p.image_url, '') as image_url,
-			  COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, '')) as image_icon_url,
-			  COALESCE(p.price_per_kg, 0) as price_per_kg,
-			  COALESCE(p.weight_kg, 0) as weight_kg,
-			  COALESCE(p.base_unit, 'kg') as base_unit
+			  COALESCE(src.image_url, p.image_url, '') as image_url,
+			  COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(src.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(src.image_thumb_url, ''), COALESCE(p.image_thumb_url, '')) as image_icon_url,
+			  COALESCE(NULLIF(src.price_per_kg, 0), COALESCE(p.price_per_kg, 0)) as price_per_kg,
+			  COALESCE(NULLIF(src.weight_kg, 0), COALESCE(p.weight_kg, 0)) as weight_kg,
+			  COALESCE(NULLIF(src.base_unit, ''), COALESCE(p.base_unit, 'kg')) as base_unit
 			  FROM store_items si
 			  LEFT JOIN users u ON si.owner_id = u.id
 			  LEFT JOIN products p ON si.product_id = p.id
-			  LEFT JOIN products src ON src.product_code = p.product_code
-			                         AND src.node_domain = '__FEDERATION__'
-			                         AND src.id <> p.id
+			  LEFT JOIN LATERAL (
+			      SELECT f.id, f.price_per_unit, f.price_per_kg, f.weight_kg, f.unit, f.base_unit, f.image_url, f.image_icon_url, f.image_thumb_url
+			      FROM products f
+			      WHERE f.node_domain = '__FEDERATION__'
+			        AND (
+			            (NULLIF(p.catalog_key, '') IS NOT NULL AND f.catalog_key = p.catalog_key)
+			            OR (NULLIF(p.product_code, '') IS NOT NULL AND f.product_code = p.product_code)
+			            OR LOWER(f.name) = LOWER(p.name)
+			        )
+			      ORDER BY
+			        CASE
+			          WHEN NULLIF(p.catalog_key, '') IS NOT NULL AND f.catalog_key = p.catalog_key THEN 1
+			          WHEN NULLIF(p.product_code, '') IS NOT NULL AND f.product_code = p.product_code THEN 2
+			          ELSE 3
+			        END
+			      LIMIT 1
+			  ) src ON true
 			  WHERE si.node_domain = $1 AND si.is_active = true
 			    AND (p.id IS NULL OR COALESCE(p.is_allowed, true) = true)`
 	args := []interface{}{s.NodeDomain}
 	if category != "" {
-		query += ` AND (si.parent_category = $2 OR si.category = $2)`
+		query += ` AND (si.parent_category = $2 OR si.category = $2 OR $2 = ANY(COALESCE(si.categories, ARRAY[]::text[])))`
 		args = append(args, category)
 	}
 	query += ` ORDER BY si.product_name ASC`
@@ -174,7 +200,7 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 	for rows.Next() {
 		var item StoreItem
 		err := rows.Scan(&item.ID, &item.NodeDomain, &item.OwnerID, &item.ProductID, &item.ItemCode, &item.ProductName, &item.Description,
-			&item.ParentCategory, &item.Category, &item.Subcategory, &item.Origin, &item.Unit, &item.QuantityPerUnit, &item.PriceTrueque,
+			&item.ParentCategory, &item.Category, &item.Categories, &item.Subcategory, &item.Origin, &item.Unit, &item.QuantityPerUnit, &item.PriceTrueque,
 			&item.BasePrice, &item.ExtraCosts, &item.FinalPrice, &item.ExtraDescription,
 			&item.Stock, &item.IsService, &item.ShowInPos, &item.IsActive, &item.ExternalOpID, &item.CreatedAt, &item.UpdatedAt, &item.OwnerName, &item.ImageURL, &item.ImageIconURL,
 			&item.PricePerKg, &item.WeightKg, &item.BaseUnit)

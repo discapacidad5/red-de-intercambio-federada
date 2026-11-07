@@ -28,6 +28,7 @@ type POSHandler struct {
 	NFC        *payments.NFCTerminals
 	NodeDomain string
 	MultiSig   *payments.MultiSigPayments
+	Auth       *AuthMiddleware
 }
 
 func NewPOSHandler(pool *pgxpool.Pool, nfc *payments.NFCTerminals, nodeDomain string) *POSHandler {
@@ -35,6 +36,7 @@ func NewPOSHandler(pool *pgxpool.Pool, nfc *payments.NFCTerminals, nodeDomain st
 }
 
 func (h *POSHandler) RegisterRoutes(r chi.Router, am *AuthMiddleware) {
+	h.Auth = am
 	// Rutas del terminal (requieren sesion de terminal activa via JWT del merchant)
 	r.With(am.RequireAuth).Post("/api/pos/charge", h.createCharge)
 	r.With(am.RequireAuth).Get("/api/pos/charge/{id}/status", h.getChargeStatus)
@@ -552,9 +554,21 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			sellerCardUID,
 		).Scan(&sellerID)
 	}
-	// La tienda del POS es la de la ENTIDAD ASIGNADA al punto (persona u
-	// organización), nunca la del operador que inició sesión — el operador
-	// solo está autorizado a vender en nombre de esa entidad.
+
+	// Extraer también el usuario autenticado por token Bearer JWT si está disponible
+	var jwtUserID uuid.UUID
+	if h.Auth != nil {
+		if uid, err := h.Auth.GetUserID(r); err == nil && uid != uuid.Nil {
+			jwtUserID = uid
+		}
+	}
+	if jwtUserID == uuid.Nil {
+		if uid, err := getUserID(r); err == nil && uid != uuid.Nil {
+			jwtUserID = uid
+		}
+	}
+
+	// Resolver desde el terminal si no vino seller_id explícito
 	termHeader := strings.TrimSpace(r.Header.Get("X-Terminal-ID"))
 	if sellerID == uuid.Nil && termHeader != "" {
 		var orgID, deptID, merchantID *uuid.UUID
@@ -566,7 +580,6 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		if orgID != nil {
 			sellerID = *orgID
 		} else if deptID != nil {
-			// Punto de departamento: la tienda es la de la org padre si existe
 			var parentOrg *uuid.UUID
 			_ = h.Pool.QueryRow(ctx, `SELECT parent_organization_id FROM departments WHERE id = $1`, *deptID).Scan(&parentOrg)
 			if parentOrg != nil {
@@ -578,10 +591,34 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			sellerID = *merchantID
 		}
 	}
-	if sellerID == uuid.Nil {
-		if uid, err := getUserID(r); err == nil && uid != uuid.Nil {
-			sellerID = uid
+	if sellerID == uuid.Nil && jwtUserID != uuid.Nil {
+		sellerID = jwtUserID
+	}
+
+	// Si el sellerID resuelto por terminal no tiene items pero el usuario JWT sí tiene, usar el usuario JWT
+	if sellerID != uuid.Nil && jwtUserID != uuid.Nil && sellerID != jwtUserID {
+		var termItemCount, jwtItemCount int
+		_ = h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM store_items WHERE owner_id = $1 AND is_active = true`, sellerID).Scan(&termItemCount)
+		_ = h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM store_items WHERE owner_id = $1 AND is_active = true`, jwtUserID).Scan(&jwtItemCount)
+		if termItemCount == 0 && jwtItemCount > 0 {
+			sellerID = jwtUserID
 		}
+	}
+
+	// Si aún no hay sellerID (ej. en arranque del POS antes de cargar sesión), usar el dueño principal de la tienda del nodo
+	if sellerID == uuid.Nil {
+		_ = h.Pool.QueryRow(ctx, `
+			SELECT owner_id FROM store_items
+			WHERE is_active = true AND owner_id IS NOT NULL
+			GROUP BY owner_id ORDER BY COUNT(*) DESC LIMIT 1`,
+		).Scan(&sellerID)
+	}
+	if sellerID == uuid.Nil {
+		_ = h.Pool.QueryRow(ctx, `
+			SELECT owner_id FROM store_categories
+			WHERE owner_id IS NOT NULL
+			GROUP BY owner_id ORDER BY COUNT(*) DESC LIMIT 1`,
+		).Scan(&sellerID)
 	}
 
 	if sellerID != uuid.Nil {
@@ -593,87 +630,122 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]VendorCatalogCompactItem, 0, 32)
 	existingProdIDs := make(map[string]bool)
+	extraItemCats := make([]string, 0, 8)
 
-	// 1. Items propios de la tienda del vendedor (store_items)
-	if sellerID != uuid.Nil {
-		rows, err := h.Pool.Query(ctx, `
-			SELECT si.id::text, COALESCE(si.product_id::text, ''), COALESCE(si.item_code, ''),
-			       si.product_name, COALESCE(si.category, ''), COALESCE(si.unit, 'unidad'),
-			       -- Precio consultado EN VIVO de la fuente — la fila
-			       -- __FEDERATION__ (src) es la única autoridad; la copia
-			       -- local o del item nunca guarda precio.
-			       CASE WHEN si.product_id IS NOT NULL THEN
-			         (CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
-			          THEN COALESCE(src.price_per_unit, p.price_per_unit,0)
-			          ELSE COALESCE(src.price_per_kg, p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
-			         END) + COALESCE(si.extra_costs,0)
-			       ELSE COALESCE(si.final_price,0) END,
-			       CASE WHEN si.product_id IS NOT NULL THEN
-			         CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
-			          THEN COALESCE(src.price_per_unit, p.price_per_unit,0)
-			          ELSE COALESCE(src.price_per_kg, p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
-			         END
-			       ELSE COALESCE(si.price_trueque,0) END,
-			       si.stock, COALESCE(si.is_service, false),
-			       COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, ''))
-			FROM store_items si
-			LEFT JOIN products p ON p.id = si.product_id
-			LEFT JOIN products src ON src.product_code = p.product_code
-			                       AND src.node_domain = '__FEDERATION__'
-			                       AND src.id <> p.id
-			WHERE (si.owner_id = $1 OR si.owner_id IS NULL
-			  OR EXISTS(SELECT 1 FROM users u
-			    WHERE u.id = $1 AND u.is_super_admin = true AND u.super_admin_enabled = true))
-			  AND si.is_active = true
-			  AND COALESCE(si.show_in_pos, true) = true
-			  AND (si.is_service = true OR si.stock > 0 OR COALESCE(p.is_universal_service, false) = true)
-			  AND (p.id IS NULL OR (p.is_approved = true AND COALESCE(p.is_allowed, true) = true))
-			  -- Categorías ocultas: el dueño decide qué categorías no van al POS.
-			  -- Se oculta si la categoría principal O cualquiera de sus
-			  -- categorías extra está marcada como no-visible.
-			  AND NOT EXISTS (
-			      SELECT 1 FROM store_categories sc
-			      WHERE sc.owner_id = $1 AND sc.show_in_pos = false
-			        AND (sc.name = si.category OR si.categories && ARRAY[sc.name])
-			  )
-			ORDER BY si.is_service ASC, si.product_name ASC`, sellerID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var id, pid, code, name, cat, unit, iconURL string
-				var finalPrice, priceTrueque float64
-				var stock int64
-				var isSvc bool
-				if err := rows.Scan(&id, &pid, &code, &name, &cat, &unit, &finalPrice, &priceTrueque, &stock, &isSvc, &iconURL); err != nil {
-					continue
-				}
-				p := finalPrice
-				if p <= 0 {
-					p = priceTrueque
-				}
-				priceCents := int64(p)
-				if p > 0 && (p != float64(int64(p)) || p < 50) {
-					priceCents = int64(p*100 + 0.5)
-				}
-				if noIcons {
-					iconURL = ""
-				}
-				if pid != "" {
-					existingProdIDs[pid] = true
-				}
-				items = append(items, VendorCatalogCompactItem{
-					ID:         id,
-					ProductID:  pid,
-					Code:       code,
-					Name:       name,
-					Category:   cat,
-					Unit:       unit,
-					PriceCents: priceCents,
-					Stock:      stock,
-					IsService:  isSvc,
-					IconURL:    iconURL,
-				})
+	// 1. Items de la tienda (store_items) con precio calculado EN VIVO desde __FEDERATION__
+	rows, err := h.Pool.Query(ctx, `
+		SELECT si.id::text, COALESCE(si.product_id::text, ''), COALESCE(si.item_code, ''),
+		       si.product_name,
+		       COALESCE(
+		           (SELECT sc_m FROM unnest(COALESCE(si.categories, ARRAY[]::text[])) sc_m
+		            WHERE EXISTS (SELECT 1 FROM store_categories sc WHERE sc.name = sc_m AND COALESCE(sc.show_in_pos, true) = true)
+		            LIMIT 1),
+		           NULLIF(si.category, ''),
+		           si.categories[1],
+		           COALESCE(p.category, '')
+		       ) AS primary_cat,
+		       COALESCE(si.categories, ARRAY[]::text[]),
+		       COALESCE(si.unit, 'unidad'),
+		       CASE WHEN si.product_id IS NOT NULL THEN
+		         compute_federation_variant_price_cents(
+		           COALESCE(src.price_per_unit, p.price_per_unit, 0),
+		           COALESCE(src.price_per_kg, p.price_per_kg, 0),
+		           COALESCE(src.weight_kg, p.weight_kg, 0),
+		           COALESCE(src.unit, p.unit, 'unidad'),
+		           COALESCE(src.base_unit, p.base_unit, 'kg'),
+		           si.unit,
+		           si.quantity_per_unit
+		         ) + COALESCE(si.extra_costs, 0)
+		       ELSE COALESCE(si.final_price, 0) END,
+		       CASE WHEN si.product_id IS NOT NULL THEN
+		         compute_federation_variant_price_cents(
+		           COALESCE(src.price_per_unit, p.price_per_unit, 0),
+		           COALESCE(src.price_per_kg, p.price_per_kg, 0),
+		           COALESCE(src.weight_kg, p.weight_kg, 0),
+		           COALESCE(src.unit, p.unit, 'unidad'),
+		           COALESCE(src.base_unit, p.base_unit, 'kg'),
+		           si.unit,
+		           si.quantity_per_unit
+		         )
+		       ELSE COALESCE(si.price_trueque, 0) END,
+		       si.stock, COALESCE(si.is_service, false),
+		       COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(src.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(src.image_thumb_url, ''), COALESCE(p.image_thumb_url, ''))
+		FROM store_items si
+		LEFT JOIN products p ON p.id = si.product_id
+		LEFT JOIN LATERAL (
+		    SELECT f.id, f.price_per_unit, f.price_per_kg, f.weight_kg, f.unit, f.base_unit, f.image_icon_url, f.image_thumb_url
+		    FROM products f
+		    WHERE f.node_domain = '__FEDERATION__'
+		      AND (
+		          (NULLIF(p.catalog_key, '') IS NOT NULL AND f.catalog_key = p.catalog_key)
+		          OR (NULLIF(p.product_code, '') IS NOT NULL AND f.product_code = p.product_code)
+		          OR LOWER(f.name) = LOWER(p.name)
+		      )
+		    ORDER BY
+		      CASE
+		        WHEN NULLIF(p.catalog_key, '') IS NOT NULL AND f.catalog_key = p.catalog_key THEN 1
+		        WHEN NULLIF(p.product_code, '') IS NOT NULL AND f.product_code = p.product_code THEN 2
+		        ELSE 3
+		      END
+		    LIMIT 1
+		) src ON true
+		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+		   OR si.owner_id = $1 OR si.owner_id IS NULL
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin')))
+		   OR EXISTS(SELECT 1 FROM organization_board_members obm WHERE obm.organization_id = si.owner_id AND obm.user_id = $1 AND COALESCE(obm.is_active, true) = true)
+		   OR NOT EXISTS(SELECT 1 FROM store_items si_own WHERE si_own.owner_id = $1 AND si_own.is_active = true))
+		  AND si.is_active = true
+		  AND COALESCE(si.show_in_pos, true) = true
+		  AND (p.id IS NULL OR (p.is_approved = true AND COALESCE(p.is_allowed, true) = true))
+		  AND NOT EXISTS (
+		      SELECT 1 FROM store_categories sc
+		      WHERE (sc.owner_id = $1 OR sc.owner_id = si.owner_id)
+		        AND sc.show_in_pos = false
+		        AND (sc.name = si.category OR COALESCE(si.categories, ARRAY[]::text[]) && ARRAY[sc.name])
+		  )
+		ORDER BY si.is_service ASC, si.product_name ASC`, sellerID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id, pid, code, name, cat, unit, iconURL string
+			var itemCats []string
+			var finalPrice, priceTrueque float64
+			var stock int64
+			var isSvc bool
+			if err := rows.Scan(&id, &pid, &code, &name, &cat, &itemCats, &unit, &finalPrice, &priceTrueque, &stock, &isSvc, &iconURL); err != nil {
+				continue
 			}
+			p := finalPrice
+			if p <= 0 {
+				p = priceTrueque
+			}
+			priceCents := int64(p + 0.5)
+			if p > 0 && (p != float64(int64(p)) || p < 50) {
+				priceCents = int64(p*100 + 0.5)
+			}
+			if noIcons {
+				iconURL = ""
+			}
+			if pid != "" {
+				existingProdIDs[pid] = true
+			}
+			for _, ic := range itemCats {
+				if ic != "" {
+					extraItemCats = append(extraItemCats, ic)
+				}
+			}
+			items = append(items, VendorCatalogCompactItem{
+				ID:         id,
+				ProductID:  pid,
+				Code:       code,
+				Name:       name,
+				Category:   cat,
+				Unit:       unit,
+				PriceCents: priceCents,
+				Stock:      stock,
+				IsService:  isSvc,
+				IconURL:    iconURL,
+			})
 		}
 	}
 
@@ -842,35 +914,48 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		sellerIDOut = sellerID.String()
 	}
 
-	// Categorías de la tienda del vendedor — el POS las usa tal cual (no las
-	// inventa): creadas en la tienda + las que usan los items + servicios
-	// universales. Orden: alfabético, con las de la tienda primero.
+	// Categorías de la tienda del vendedor — el POS las usa tal cual:
+	// 1) categorías creadas/visibles en store_categories
+	// 2) categorías asignadas a los items de la tienda y servicios universales
 	catSet := map[string]bool{}
 	catOrder := []string{}
-	// 1) categorías creadas/visibles en la tienda
 	if catRows, cErr := h.Pool.Query(ctx, `
-		SELECT name FROM store_categories
-		WHERE owner_id = $1 AND COALESCE(show_in_pos, true) = true ORDER BY name`, sellerID); cErr == nil {
+		SELECT DISTINCT name FROM store_categories
+		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+		   OR owner_id = $1
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin')))
+		   OR owner_id IN (SELECT organization_id FROM organization_board_members WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+		   OR NOT EXISTS(SELECT 1 FROM store_categories sc_own WHERE sc_own.owner_id = $1))
+		  AND COALESCE(show_in_pos, true) = true
+		ORDER BY name`, sellerID); cErr == nil {
 		for catRows.Next() {
 			var n string
-			if catRows.Scan(&n) == nil && !catSet[n] {
+			if catRows.Scan(&n) == nil && n != "" && !catSet[n] {
 				catSet[n] = true
 				catOrder = append(catOrder, n)
 			}
 		}
 		catRows.Close()
 	}
-	// 2) categorías que usan los items (incluye "Trabajo" de universales)
+	for _, ic := range extraItemCats {
+		if ic != "" && !catSet[ic] {
+			catSet[ic] = true
+			catOrder = append(catOrder, ic)
+		}
+	}
 	for _, it := range items {
 		if it.Category != "" && !catSet[it.Category] {
-			// no incluir categorías ocultas
 			catSet[it.Category] = true
 			catOrder = append(catOrder, it.Category)
 		}
 	}
-	// quitar las ocultadas en la tienda
+	// Quitar las categorías marcadas explícitamente como ocultas en el POS
 	if hiddenRows, hErr := h.Pool.Query(ctx, `
-		SELECT name FROM store_categories WHERE owner_id = $1 AND show_in_pos = false`, sellerID); hErr == nil {
+		SELECT DISTINCT name FROM store_categories
+		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+		   OR owner_id = $1
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin'))))
+		  AND show_in_pos = false`, sellerID); hErr == nil {
 		hidden := map[string]bool{}
 		for hiddenRows.Next() {
 			var n string
@@ -890,18 +975,14 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Calcular hash/ETag ligero — incluye categorías para que cambios de
-	// categoría (nueva, renombrada, oculta) invaliden el cache del POS
 	rawBytes, _ := json.Marshal(items)
 	catBytes, _ := json.Marshal(catOrder)
 	sum := sha256.Sum256(append(rawBytes, catBytes...))
 	etag := hex.EncodeToString(sum[:8])
 
-	if clientVer := strings.TrimSpace(r.URL.Query().Get("v")); clientVer != "" && clientVer == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
+	// Siempre responder 200 OK con el catálogo completo (categorías + items)
+	// para que las apps Android instaladas nunca pierdan las categorías de la tienda
+	// cuando el caché local sólo almacenaba items sin el arreglo categories.
 	writeJSON(w, 200, map[string]interface{}{
 		"v":               etag,
 		"seller_id":       sellerIDOut,
