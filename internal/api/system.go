@@ -994,13 +994,14 @@ func (h *SystemHandler) listFederatedProducts(w http.ResponseWriter, r *http.Req
 		calcExplanation := ""
 		if pricePerKg > 0 && weightKg > 0 {
 			suggestedPrice = pricePerKg * weightKg
+			w := strconv.FormatFloat(weightKg, 'f', -1, 64)
 			switch baseUnit {
 			case "L":
-				calcExplanation = fmt.Sprintf("%.2f TQ/L x %.3f L = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/L x %s L = %.2f TQ", pricePerKg, w, suggestedPrice)
 			case "unidad":
-				calcExplanation = fmt.Sprintf("%.2f TQ/unidad x %.0f unidades = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/unidad x %s unidades = %.2f TQ", pricePerKg, w, suggestedPrice)
 			default:
-				calcExplanation = fmt.Sprintf("%.2f TQ/kg x %.3f kg = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/kg x %s kg = %.2f TQ", pricePerKg, w, suggestedPrice)
 			}
 		}
 		products = append(products, map[string]interface{}{
@@ -1124,13 +1125,14 @@ func scanProductRows(rows pgx.Rows) []map[string]interface{} {
 		calcExplanation := ""
 		if pricePerKg > 0 && weightKg > 0 {
 			suggestedPrice = pricePerKg * weightKg
+			w := strconv.FormatFloat(weightKg, 'f', -1, 64)
 			switch baseUnit {
 			case "L":
-				calcExplanation = fmt.Sprintf("%.2f TQ/L x %.3f L = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/L x %s L = %.2f TQ", pricePerKg, w, suggestedPrice)
 			case "unidad":
-				calcExplanation = fmt.Sprintf("%.2f TQ/unidad x %.0f unidades = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/unidad x %s unidades = %.2f TQ", pricePerKg, w, suggestedPrice)
 			default:
-				calcExplanation = fmt.Sprintf("%.2f TQ/kg x %.3f kg = %.2f TQ", pricePerKg, weightKg, suggestedPrice)
+				calcExplanation = fmt.Sprintf("%.2f TQ/kg x %s kg = %.2f TQ", pricePerKg, w, suggestedPrice)
 			}
 		}
 		products = append(products, map[string]interface{}{
