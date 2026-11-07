@@ -1465,7 +1465,7 @@ export default function Products() {
                             {canManage && p.is_allowed !== true && (
                               <button
                                 onClick={() => allowProduct(p)}
-                                className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full hover:bg-green-200 transition flex items-center gap-1"
+                                className="text-[10px] font-bold text-green-700 bg-white border border-green-500 px-2.5 py-1 rounded-lg hover:bg-green-50 transition flex items-center gap-1"
                                 title={t('tooltip_allow_node', 'Permitir este producto en el nodo')}
                               >
                                 <Check size={10} /> {t('allow', 'Permitir')}
@@ -1474,7 +1474,7 @@ export default function Products() {
                             {canManage && p.is_allowed !== false && (
                               <button
                                 onClick={() => disallowProduct(p)}
-                                className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full hover:bg-red-200 transition flex items-center gap-1"
+                                className="text-[10px] font-bold text-red-700 bg-white border border-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50 transition flex items-center gap-1"
                                 title={t('tooltip_disallow_node', 'No permitir este producto en el nodo')}
                               >
                                 <X size={10} /> {t('disallow', 'No Permitir')}
@@ -1484,7 +1484,7 @@ export default function Products() {
                             {p.is_federation && p.in_my_node === false && (
                               <button
                                 onClick={() => incorporateProduct(p)}
-                                className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full hover:bg-emerald-200 transition flex items-center gap-1"
+                                className="text-[10px] font-bold text-emerald-700 bg-white border border-emerald-500 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition flex items-center gap-1"
                                 title={t('tooltip_incorporate', 'Incorporar este producto a mi nodo (queda pendiente de aprobacion)')}
                               >
                                 <Plus size={10} /> {t('incorporate', 'Agregar a mi nodo')}
@@ -1512,14 +1512,14 @@ export default function Products() {
                                     })
                                     setShowCatalogProposal(true)
                                   }}
-                                  className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full hover:bg-blue-200 transition flex items-center gap-1"
+                                  className="text-[10px] font-bold text-blue-700 bg-white border border-blue-500 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition flex items-center gap-1"
                                   title={t('tooltip_propose_catalog_change', 'Proponer cambio a la federacion (votacion global)')}
                                 >
                                   <Pencil size={10} /> {t('propose_catalog_change', 'Proponer cambio')}
                                 </button>
                                 <button
                                   onClick={() => proposeCatalogRemove(p)}
-                                  className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full hover:bg-red-200 transition flex items-center gap-1"
+                                  className="text-[10px] font-bold text-red-700 bg-white border border-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50 transition flex items-center gap-1"
                                   title={t('tooltip_propose_catalog_remove', 'Proponer retirar del catalogo (votacion de la federacion)')}
                                 >
                                   <Trash2 size={10} /> {t('propose_catalog_remove', 'Proponer retiro')}
@@ -1530,7 +1530,7 @@ export default function Products() {
                             {!p.available_locally && !p.is_federation && (
                               <button
                                 onClick={() => proposeProductToAssembly(p)}
-                                className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full hover:bg-amber-200 transition flex items-center gap-1"
+                                className="text-[10px] font-bold text-amber-700 bg-white border border-amber-500 px-2.5 py-1 rounded-lg hover:bg-amber-50 transition flex items-center gap-1"
                               >
                                 <ArrowUpCircle size={10} /> {t('propose_assembly', 'Proponer en Asamblea')}
                               </button>
@@ -1540,7 +1540,7 @@ export default function Products() {
                               p.is_approved ? (
                                 <button
                                   onClick={() => disapproveProduct(p)}
-                                  className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full hover:bg-red-200 transition flex items-center gap-1"
+                                  className="text-[10px] font-bold text-red-700 bg-white border border-red-500 px-2.5 py-1 rounded-lg hover:bg-red-50 transition flex items-center gap-1"
                                   title={t('tooltip_propose_disapprove', 'Proponer desaprobar producto en la Asamblea')}
                                 >
                                   <X size={10} /> {t('disapprove', 'Desaprobar')}
@@ -1548,7 +1548,7 @@ export default function Products() {
                               ) : (
                                 <button
                                   onClick={() => approveFromFederated(p)}
-                                  className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full hover:bg-green-200 transition flex items-center gap-1"
+                                  className="text-[10px] font-bold text-green-700 bg-white border border-green-500 px-2.5 py-1 rounded-lg hover:bg-green-50 transition flex items-center gap-1"
                                   title={t('tooltip_propose_approve', 'Proponer aprobar producto en la Asamblea')}
                                 >
                                   <Check size={10} /> {t('approve', 'Aprobar')}
