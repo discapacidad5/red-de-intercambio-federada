@@ -3,7 +3,7 @@ import { api } from '../api'
 import { useConfig } from '../hooks/useConfig'
 import { useTranslation } from 'react-i18next'
 import { Calculator as CalcIcon, HelpCircle, Plus, Trash2, X } from 'lucide-react'
-import { fmtNumber } from '../lib/format'
+import { fmtNumber, fmtTQ } from '../lib/format'
 
 // Tipos de trabajo predefinidos con su costo energetico (kWh por hora)
 // Basado en estudios de costo energetico humano
@@ -407,7 +407,7 @@ export default function Calculator() {
                 <div className="flex gap-2 flex-wrap">
                   {products.slice(0, 10).map((p) => (
                     <button key={p.id} onClick={() => addProductAsInput(p)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">
-                      + {p.name} ({p.price_trueque} {currency})
+                      + {p.name} ({fmtTQ(p.price_trueque || 0)} {currency})
                     </button>
                   ))}
                 </div>

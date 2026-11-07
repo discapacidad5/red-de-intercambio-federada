@@ -1282,7 +1282,7 @@ function OrgStore({ orgID }: { orgID: string }) {
                   <h3 className="font-semibold">{item.product_name}</h3>
                   <p className="text-xs text-gray-500">{item.category || item.parent_category || '—'} · {item.item_code || ''}</p>
                 </div>
-                <span className="text-sm font-bold text-trueque-700">{item.final_price || item.price_trueque} TQ</span>
+                <span className="text-sm font-bold text-trueque-700">{fmtTQ(item.final_price || item.price_trueque || 0)} TQ</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className={`text-sm ${item.stock === 0 ? 'text-red-500' : 'text-gray-500'}`}>
