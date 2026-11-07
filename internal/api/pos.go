@@ -818,9 +818,64 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Calcular hash/ETag ligero para evitar re-descargas innecesarias
+	var sellerIDOut string
+	if sellerID != uuid.Nil {
+		sellerIDOut = sellerID.String()
+	}
+
+	// Categorías de la tienda del vendedor — el POS las usa tal cual (no las
+	// inventa): creadas en la tienda + las que usan los items + servicios
+	// universales. Orden: alfabético, con las de la tienda primero.
+	catSet := map[string]bool{}
+	catOrder := []string{}
+	// 1) categorías creadas/visibles en la tienda
+	if catRows, cErr := h.Pool.Query(ctx, `
+		SELECT name FROM store_categories
+		WHERE owner_id = $1 AND COALESCE(show_in_pos, true) = true ORDER BY name`, sellerID); cErr == nil {
+		for catRows.Next() {
+			var n string
+			if catRows.Scan(&n) == nil && !catSet[n] {
+				catSet[n] = true
+				catOrder = append(catOrder, n)
+			}
+		}
+		catRows.Close()
+	}
+	// 2) categorías que usan los items (incluye "Trabajo" de universales)
+	for _, it := range items {
+		if it.Category != "" && !catSet[it.Category] {
+			// no incluir categorías ocultas
+			catSet[it.Category] = true
+			catOrder = append(catOrder, it.Category)
+		}
+	}
+	// quitar las ocultadas en la tienda
+	if hiddenRows, hErr := h.Pool.Query(ctx, `
+		SELECT name FROM store_categories WHERE owner_id = $1 AND show_in_pos = false`, sellerID); hErr == nil {
+		hidden := map[string]bool{}
+		for hiddenRows.Next() {
+			var n string
+			if hiddenRows.Scan(&n) == nil {
+				hidden[n] = true
+			}
+		}
+		hiddenRows.Close()
+		if len(hidden) > 0 {
+			filtered := catOrder[:0]
+			for _, n := range catOrder {
+				if !hidden[n] {
+					filtered = append(filtered, n)
+				}
+			}
+			catOrder = filtered
+		}
+	}
+
+	// Calcular hash/ETag ligero — incluye categorías para que cambios de
+	// categoría (nueva, renombrada, oculta) invaliden el cache del POS
 	rawBytes, _ := json.Marshal(items)
-	sum := sha256.Sum256(rawBytes)
+	catBytes, _ := json.Marshal(catOrder)
+	sum := sha256.Sum256(append(rawBytes, catBytes...))
 	etag := hex.EncodeToString(sum[:8])
 
 	if clientVer := strings.TrimSpace(r.URL.Query().Get("v")); clientVer != "" && clientVer == etag {
@@ -828,16 +883,12 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sellerIDOut string
-	if sellerID != uuid.Nil {
-		sellerIDOut = sellerID.String()
-	}
-
 	writeJSON(w, 200, map[string]interface{}{
 		"v":               etag,
 		"seller_id":       sellerIDOut,
 		"seller_username": sellerUsername,
 		"seller_name":     sellerDisplay,
+		"categories":      catOrder,
 		"items":           items,
 	})
 }
