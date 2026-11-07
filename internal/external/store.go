@@ -124,21 +124,21 @@ func (s *Store) AddItem(ctx context.Context, p AddStoreItemParams) (*StoreItem, 
 func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, error) {
 	query := `SELECT si.id, si.node_domain, si.owner_id, si.product_id, COALESCE(si.item_code, ''), si.product_name, si.description, si.parent_category, si.category, si.subcategory, si.origin,
 			  si.unit, si.quantity_per_unit,
-		  -- Precio DERIVADO del producto padre (centavos): el precio nunca se
-		  -- copia — si el padre cambia, el item sigue el nuevo precio.
+		  -- Precio consultado EN VIVO de la fuente: siempre la fila
+		  -- __FEDERATION__ (src) — la copia local nunca es autoridad.
 		  -- Conversión por unidad de venta: ppk(TQ) × cant_por_unidad × 100.
 		  CASE WHEN si.product_id IS NOT NULL THEN
-		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
-		         THEN COALESCE(p.price_per_unit, 0)
-		         ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
+		         THEN COALESCE(src.price_per_unit, p.price_per_unit, 0)
+		         ELSE COALESCE(src.price_per_kg, p.price_per_kg, 0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
 		    END
 		  ELSE COALESCE(si.price_trueque,0) END as price_trueque,
-		  COALESCE(p.price_per_unit, si.base_price) as base_price,
+		  COALESCE(src.price_per_unit, p.price_per_unit, si.base_price) as base_price,
 		  si.extra_costs,
 		  CASE WHEN si.product_id IS NOT NULL THEN
-		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
-		         THEN COALESCE(p.price_per_unit, 0)
-		         ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(src.unit, p.unit,''))
+		         THEN COALESCE(src.price_per_unit, p.price_per_unit, 0)
+		         ELSE COALESCE(src.price_per_kg, p.price_per_kg, 0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
 		    END + COALESCE(si.extra_costs,0)
 		  ELSE COALESCE(si.final_price,0) END as final_price,
 		  si.extra_description,
@@ -152,6 +152,9 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 			  FROM store_items si
 			  LEFT JOIN users u ON si.owner_id = u.id
 			  LEFT JOIN products p ON si.product_id = p.id
+			  LEFT JOIN products src ON src.product_code = p.product_code
+			                         AND src.node_domain = '__FEDERATION__'
+			                         AND src.id <> p.id
 			  WHERE si.node_domain = $1 AND si.is_active = true
 			    AND (p.id IS NULL OR COALESCE(p.is_allowed, true) = true)`
 	args := []interface{}{s.NodeDomain}
