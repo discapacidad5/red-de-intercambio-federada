@@ -604,7 +604,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, ''))
 			FROM store_items si
 			LEFT JOIN products p ON p.id = si.product_id
-			WHERE si.owner_id = $1
+			WHERE (si.owner_id = $1 OR si.owner_id IS NULL)
 			  AND si.is_active = true
 			  AND COALESCE(si.show_in_pos, true) = true
 			  AND (si.is_service = true OR si.stock > 0 OR COALESCE(p.is_universal_service, false) = true)
