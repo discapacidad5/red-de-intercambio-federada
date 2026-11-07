@@ -123,7 +123,25 @@ func (s *Store) AddItem(ctx context.Context, p AddStoreItemParams) (*StoreItem, 
 
 func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, error) {
 	query := `SELECT si.id, si.node_domain, si.owner_id, si.product_id, COALESCE(si.item_code, ''), si.product_name, si.description, si.parent_category, si.category, si.subcategory, si.origin,
-			  si.unit, si.quantity_per_unit, si.price_trueque, si.base_price, si.extra_costs, si.final_price, si.extra_description,
+			  si.unit, si.quantity_per_unit,
+		  -- Precio DERIVADO del producto padre (centavos): el precio nunca se
+		  -- copia — si el padre cambia, el item sigue el nuevo precio.
+		  -- Conversión por unidad de venta: ppk(TQ) × cant_por_unidad × 100.
+		  CASE WHEN si.product_id IS NOT NULL THEN
+		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
+		         THEN COALESCE(p.price_per_unit, 0)
+		         ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+		    END
+		  ELSE COALESCE(si.price_trueque,0) END as price_trueque,
+		  COALESCE(p.price_per_unit, si.base_price) as base_price,
+		  si.extra_costs,
+		  CASE WHEN si.product_id IS NOT NULL THEN
+		    CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
+		         THEN COALESCE(p.price_per_unit, 0)
+		         ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+		    END + COALESCE(si.extra_costs,0)
+		  ELSE COALESCE(si.final_price,0) END as final_price,
+		  si.extra_description,
 			  si.stock, COALESCE(si.is_service, false), COALESCE(si.show_in_pos, true), si.is_active, si.external_op_id, si.created_at, si.updated_at,
 			  COALESCE(u.username, '') as owner_name,
 			  COALESCE(p.image_url, '') as image_url,

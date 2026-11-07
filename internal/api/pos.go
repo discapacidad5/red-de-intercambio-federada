@@ -599,7 +599,20 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		rows, err := h.Pool.Query(ctx, `
 			SELECT si.id::text, COALESCE(si.product_id::text, ''), COALESCE(si.item_code, ''),
 			       si.product_name, COALESCE(si.category, ''), COALESCE(si.unit, 'unidad'),
-			       COALESCE(si.final_price, 0), COALESCE(si.price_trueque, 0),
+			       -- Precio DERIVADO del padre (centavos) — el item nunca
+			       -- almacena copia; si el precio padre cambia, se propaga.
+			       CASE WHEN si.product_id IS NOT NULL THEN
+			         (CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
+			          THEN COALESCE(p.price_per_unit,0)
+			          ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+			         END) + COALESCE(si.extra_costs,0)
+			       ELSE COALESCE(si.final_price,0) END,
+			       CASE WHEN si.product_id IS NOT NULL THEN
+			         CASE WHEN LOWER(si.unit) = LOWER(COALESCE(p.unit,''))
+			          THEN COALESCE(p.price_per_unit,0)
+			          ELSE COALESCE(p.price_per_kg,0) * COALESCE(NULLIF(si.quantity_per_unit,0),1) * 100
+			         END
+			       ELSE COALESCE(si.price_trueque,0) END,
 			       si.stock, COALESCE(si.is_service, false),
 			       COALESCE(NULLIF(si.image_icon_url, ''), COALESCE(p.image_icon_url, ''), COALESCE(p.image_thumb_url, ''))
 			FROM store_items si
