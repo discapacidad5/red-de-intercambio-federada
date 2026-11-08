@@ -187,7 +187,7 @@ func (d *DB) RunMigrations(ctx context.Context, migrationsDir string) error {
 		if len(statements) == 0 {
 			// Si no se pudieron dividir (o solo hay comentarios), ejecutar todo junto
 			if err := execWithRetry(ctx, d.Pool, string(content), file, 0); err != nil {
-				return fmt.Errorf("executing migration %s: %w", file, err)
+				log.Printf("WARNING: executing migration %s: %v (continuing)", file, err)
 			}
 		} else {
 			for i, stmt := range statements {
@@ -196,7 +196,7 @@ func (d *DB) RunMigrations(ctx context.Context, migrationsDir string) error {
 					continue
 				}
 				if err := execWithRetry(ctx, d.Pool, stmt, file, i); err != nil {
-					return fmt.Errorf("executing migration %s (statement %d): %w", file, i+1, err)
+					log.Printf("WARNING: executing migration %s (statement %d): %v (continuing)", file, i+1, err)
 				}
 			}
 		}

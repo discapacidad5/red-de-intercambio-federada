@@ -23,17 +23,39 @@ _setup_app_sources() {
             echo "yunohost" > "$install_dir/BUILD_COMMIT"
         fi
     else
-        # Si se instala desde la carpeta yunohost/ o un repositorio _ynh separado, clonar el repo principal
-        local tmp_clone
-        tmp_clone=$(mktemp -d)
-        git clone --depth 1 "$UPSTREAM_REPO" "$tmp_clone"
+        # Si se instala desde la carpeta yunohost/ o un repositorio _ynh separado, bajar el código.
+        # TARBALL en vez de git clone: el repo pesa ~240MB y 'git clone' en
+        # servidores con poca RAM muere por OOM al resolver el pack.
+        # El tarball solo extrae el árbol — usa muchísima menos memoria.
+        local tmp_clone="$data_dir/.upstream_src"
+        ynh_safe_rm "$tmp_clone"
+        mkdir -p "$tmp_clone"
+        # Obtener el SHA exacto del último commit vía git ls-remote (sin caché de CDN)
+        local latest_sha
+        latest_sha=$(git ls-remote "$UPSTREAM_REPO" refs/heads/main 2>/dev/null | awk '{print $1}')
+        local tarball_url="https://github.com/discapacidad5/red-de-intercambio-federada/archive/refs/heads/main.tar.gz"
+        if [ -n "$latest_sha" ]; then
+            tarball_url="https://github.com/discapacidad5/red-de-intercambio-federada/archive/${latest_sha}.tar.gz"
+        fi
+        ynh_print_warn "Descargando código fuente (tarball ${latest_sha:0:7})..."
+        curl -fsSL "$tarball_url" \
+            | tar xz -C "$tmp_clone" --strip-components=1 \
+            || ynh_die "No se pudo descargar el código — revisa conectividad a GitHub"
+        # El tarball trae todo — quedarnos solo con lo del servidor
+        for item in punto-de-venta-pos punto-de-venta-pos-v1 .git .github; do
+            ynh_safe_rm "$tmp_clone/$item"
+        done
         for item in cmd internal web firmware go.mod go.sum LICENSE config.demo.yaml config.satellite.yaml; do
             if [ -e "$tmp_clone/$item" ]; then
                 rm -rf "$install_dir/$item"
                 cp -a "$tmp_clone/$item" "$install_dir/$item"
             fi
         done
-        git -C "$tmp_clone" rev-parse --short HEAD > "$install_dir/BUILD_COMMIT" 2>/dev/null || echo "yunohost" > "$install_dir/BUILD_COMMIT"
+        if [ -n "$latest_sha" ]; then
+            echo "${latest_sha:0:7}" > "$install_dir/BUILD_COMMIT"
+        else
+            echo "main" > "$install_dir/BUILD_COMMIT"
+        fi
         ynh_safe_rm "$tmp_clone"
     fi
 
