@@ -631,32 +631,63 @@ export default function Store() {
                 </button>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {storeCats.length === 0 ? (
-                  <p className="text-xs text-gray-500">{t('store_no_cats', 'Sin categorías — crea la primera arriba.')}</p>
-                ) : storeCats.map((c: any) => (
-                  <span key={c.id || c.name} className={`inline-flex items-center gap-1.5 text-xs font-bold border px-2.5 py-1 rounded-full ${
-                    c.show_in_pos === false ? 'bg-gray-100 border-gray-300 text-gray-400' : 'bg-white border-purple-300 text-purple-800'
-                  }`}>
-                    {c.name}
-                    {/* Ojo: mostrar/ocultar esta categoría en el POS */}
-                    <button
-                      onClick={async () => {
-                        const show = c.show_in_pos === false
-                        try {
-                          await api.put('/store/categories/visibility', { name: c.name, show_in_pos: show })
-                          setStoreCats(prev => prev.map((x: any) => x.name === c.name ? { ...x, show_in_pos: show } : x))
-                        } catch (e: any) { setError(e.message || 'Error') }
-                      }}
-                      className={c.show_in_pos === false ? 'text-gray-400 hover:text-gray-600' : 'text-purple-600 hover:text-purple-800'}
-                      title={c.show_in_pos === false ? 'Oculta del POS — tocar para mostrar' : 'Visible en POS — tocar para ocultar'}
-                    >
-                      {c.show_in_pos === false ? '👁️‍🗨️' : '👁️'}
-                    </button>
-                    {c.source === 'created' && c.id && (
-                      <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
-                    )}
-                  </span>
-                ))}
+                {(() => {
+                  const seen = new Set<string>()
+                  const merged: any[] = []
+                  for (const c of storeCats) {
+                    if (c?.name && !seen.has(c.name.toLowerCase())) {
+                      seen.add(c.name.toLowerCase())
+                      merged.push(c)
+                    }
+                  }
+                  for (const it of items) {
+                    const cat = (it?.category || '').trim()
+                    if (cat && !seen.has(cat.toLowerCase())) {
+                      seen.add(cat.toLowerCase())
+                      merged.push({ name: cat, source: 'items', show_in_pos: true })
+                    }
+                  }
+                  for (const fixed of ['Trabajo', 'Favoritos']) {
+                    if (!seen.has(fixed.toLowerCase())) {
+                      seen.add(fixed.toLowerCase())
+                      merged.push({ name: fixed, source: 'system', show_in_pos: true, is_fixed: true })
+                    }
+                  }
+                  return merged.map((c: any) => {
+                    const isFixed = c.is_fixed || c.source === 'system' || c.name?.toLowerCase() === 'trabajo' || c.name?.toLowerCase() === 'favoritos'
+                    return (
+                      <span key={c.id || c.name} className={`inline-flex items-center gap-1.5 text-xs font-bold border px-2.5 py-1 rounded-full ${
+                        c.show_in_pos === false ? 'bg-gray-100 border-gray-300 text-gray-400' : 'bg-white border-purple-300 text-purple-800'
+                      }`}>
+                        {c.name}
+                        {isFixed ? (
+                          <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded-full">
+                            Fija
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={async () => {
+                                const show = c.show_in_pos === false
+                                try {
+                                  await api.put('/store/categories/visibility', { name: c.name, show_in_pos: show })
+                                  setStoreCats(prev => prev.map((x: any) => x.name === c.name ? { ...x, show_in_pos: show } : x))
+                                } catch (e: any) { setError(e.message || 'Error') }
+                              }}
+                              className={c.show_in_pos === false ? 'text-gray-400 hover:text-gray-600' : 'text-purple-600 hover:text-purple-800'}
+                              title={c.show_in_pos === false ? 'Oculta del POS — tocar para mostrar' : 'Visible en POS — tocar para ocultar'}
+                            >
+                              {c.show_in_pos === false ? '👁️‍🗨️' : '👁️'}
+                            </button>
+                            {c.source === 'created' && c.id && (
+                              <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    )
+                  })
+                })()}
               </div>
             </div>
           )}
@@ -1175,36 +1206,85 @@ export default function Store() {
             </div>
           )}
 
-          {/* Filtro por categoría — chips de tus categorías creadas */}
-          {storeCats.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap items-center">
-              <span className="text-xs font-bold text-gray-500">{t('store_filter_cat', 'Filtrar:')}</span>
-              <button
-                onClick={() => setCatFilter('')}
-                className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
-                  catFilter === '' ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
-                }`}
-              >{t('store_filter_all', 'Todas')}</button>
-              {storeCats.map((c: any) => (
+          {/* Barra de categorías unificada con el POS Android: Todas -> Categorías de la tienda -> Trabajo -> Favoritos */}
+          {(() => {
+            const seen = new Set<string>(['todas', 'favoritos'])
+            const middleCats: string[] = []
+            for (const c of storeCats) {
+              const n = (c?.name || '').trim()
+              if (n && !seen.has(n.toLowerCase())) {
+                seen.add(n.toLowerCase())
+                middleCats.push(n)
+              }
+            }
+            for (const it of items) {
+              const n = (it?.category || '').trim()
+              if (n && !seen.has(n.toLowerCase())) {
+                seen.add(n.toLowerCase())
+                middleCats.push(n)
+              }
+              if (Array.isArray(it?.categories)) {
+                for (const sub of it.categories) {
+                  const sn = (sub || '').trim()
+                  if (sn && !seen.has(sn.toLowerCase())) {
+                    seen.add(sn.toLowerCase())
+                    middleCats.push(sn)
+                  }
+                }
+              }
+            }
+            if (!seen.has('trabajo')) {
+              seen.add('trabajo')
+              middleCats.push('Trabajo')
+            }
+            const allTabs = [...middleCats, 'Favoritos']
+            return (
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="text-xs font-bold text-gray-500">{t('store_filter_cat', 'Categorías:')}</span>
                 <button
-                  key={c.id}
-                  onClick={() => setCatFilter(catFilter === c.name ? '' : c.name)}
+                  onClick={() => setCatFilter('')}
                   className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
-                    catFilter === c.name ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
+                    catFilter === '' ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
                   }`}
-                >{c.name}</button>
-              ))}
-            </div>
-          )}
+                >{t('store_filter_all', 'Todas')}</button>
+                {allTabs.map((catName) => (
+                  <button
+                    key={catName}
+                    onClick={() => setCatFilter(catFilter === catName ? '' : catName)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                      catFilter === catName ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
+                    }`}
+                  >{catName}</button>
+                ))}
+              </div>
+            )
+          })()}
 
-          {items.filter((i: any) => !catFilter || i.category === catFilter || (Array.isArray(i.categories) && i.categories.includes(catFilter))).length === 0 && !showForm ? (
+          {(() => {
+            const matchCat = (i: any) => {
+              if (!catFilter) return true
+              if (catFilter.toLowerCase() === 'favoritos') {
+                const explicitFavs = items.filter((x: any) =>
+                  x.category?.toLowerCase() === 'favoritos' ||
+                  (Array.isArray(x.categories) && x.categories.some((c: string) => c.toLowerCase() === 'favoritos'))
+                )
+                if (explicitFavs.length > 0) {
+                  return explicitFavs.includes(i)
+                }
+                return items.slice(0, 6).includes(i)
+              }
+              return i.category?.toLowerCase() === catFilter.toLowerCase() ||
+                (Array.isArray(i.categories) && i.categories.some((c: string) => c.toLowerCase() === catFilter.toLowerCase()))
+            }
+            const visibleStoreItems = items.filter(matchCat)
+            return visibleStoreItems.length === 0 && !showForm ? (
             <div className="card text-center text-gray-500 py-8">
               <p>{t('store_empty', 'Tu tienda esta vacia.')}</p>
               <p className="text-xs mt-2">{t('store_empty_hint', 'Agrega productos del registro global con el boton de arriba.')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {items.filter((i: any) => !catFilter || i.category === catFilter || (Array.isArray(i.categories) && i.categories.includes(catFilter))).map((item, i) => {
+              {visibleStoreItems.map((item, i) => {
                 const product = products.find((p) => p.id === item.product_id)
                 const displayPrice = item.final_price || item.price_trueque || product?.price_trueque || 0
                 const baseP = item.base_price || item.price_trueque || product?.price_trueque || 0
@@ -1531,7 +1611,8 @@ export default function Store() {
                 )
               })}
             </div>
-          )}
+          )
+          })()}
         </div>
       )}
 

@@ -733,7 +733,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		   OR NOT EXISTS(SELECT 1 FROM store_items si_own WHERE si_own.owner_id = $1 AND si_own.is_active = true))
 		  AND si.is_active = true
 		  AND COALESCE(si.show_in_pos, true) = true
-		  AND (p.id IS NULL OR (p.is_approved = true AND COALESCE(p.is_allowed, true) = true))
+		  AND (p.id IS NULL OR COALESCE(p.is_allowed, true) = true)
 		  AND NOT EXISTS (
 		      SELECT 1 FROM store_categories sc
 		      WHERE (sc.owner_id = $1 OR sc.owner_id = si.owner_id)
@@ -824,121 +824,36 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 	if workHours <= 0 {
 		workHours = 8
 	}
-	laborRate := func(cat, name, unit string) float64 {
-		lc := strings.ToLower(cat + " " + name)
-		rate := rateAdmin
-		switch {
-		case strings.Contains(lc, "agricola") || strings.Contains(lc, "conuco") || strings.Contains(lc, "mano vuelta") || strings.Contains(lc, "pesado"):
-			rate = rateAgr
-		case strings.Contains(lc, "tecnico") || strings.Contains(lc, "técnico") || strings.Contains(lc, "profesional") || strings.Contains(lc, "especialista"):
-			rate = rateTech
-		case strings.Contains(lc, "intelectual") || strings.Contains(lc, "oficina") || strings.Contains(lc, "admin") || strings.Contains(lc, "sedentario"):
-			rate = rateAdmin
-		}
-		if strings.EqualFold(unit, "jornada") || strings.Contains(lc, "jornada completa") {
-			return rate * float64(workHours)
-		}
-		return rate
-	}
 
-	// 2. Servicios universales del nodo (ej: Trabajo en el Conuco / Mano Vuelta)
-	// La matriz de trabajo siempre está disponible — tarifas fijas por hora.
-	matrixAvailable := true
-	uRows, uErr := h.Pool.Query(ctx, `
-		SELECT id::text, COALESCE(item_code, '90001'), name, COALESCE(category, 'Servicios'),
-		       COALESCE(unit, 'hora'), price_per_unit,
-		       COALESCE(NULLIF(image_icon_url, ''), COALESCE(image_thumb_url, ''))
-		FROM products
-		WHERE node_domain = '__FEDERATION__'
-		  AND is_active = true
-		  AND is_approved = true
-		  AND COALESCE(is_allowed, true) = true
-		  AND COALESCE(is_universal_service, false) = true
-		ORDER BY name ASC`)
-	if uErr == nil {
-		defer uRows.Close()
-		for uRows.Next() {
-			var pid, code, name, cat, unit, iconURL string
-			var price float64
-			if err := uRows.Scan(&pid, &code, &name, &cat, &unit, &price, &iconURL); err != nil {
-				continue
-			}
-			if existingProdIDs[pid] {
-				continue
-			}
-			// Servicios de trabajo sembrados: la matriz dinámica los cubre
-			// (3 tipos × hora/jornada) — saltarlos para no duplicar.
-			if matrixAvailable {
-				lc := strings.ToLower(name + " " + cat)
-				if strings.Contains(lc, "jornada") || strings.Contains(lc, "trabajo") ||
-					strings.Contains(lc, "conuco") || strings.Contains(lc, "mano vuelta") ||
-					strings.Contains(lc, "labor") {
-					continue
-				}
-			}
-			// Precio real del trabajo: tarifa del nodo por tipo (normal/oficina/
-			// técnico/agrícola) y por horas de jornada configuradas.
-			if laborPrice := laborRate(cat, name, unit); laborPrice > 0 {
-				price = laborPrice
-			}
-			priceCents := int64(price)
-			if price > 0 && (price != float64(int64(price)) || price < 50) {
-				priceCents = int64(price*100 + 0.5)
-			}
-			if noIcons {
-				iconURL = ""
-			}
-			items = append(items, VendorCatalogCompactItem{
-				ID:          pid,
-				ProductID:   pid,
-				Code:        code,
-				Name:        name,
-				Category:    cat,
-				Unit:        unit,
-				PriceCents:  priceCents,
-				Stock:       -1,
-				IsService:   true,
-				IsUniversal: true,
-				IconURL:     iconURL,
-			})
-		}
-	}
-
-	// 3. Matriz de servicios de trabajo — SIEMPRE presente en todo punto,
-	// aunque la tienda esté vacía. Tarifa fija por hora (TQ/hora):
-	//   Sedentario/oficina 1.00 | Profesional/especialista 1.15 | Pesado/agrícola 1.30
-	// La jornada usa las horas configuradas en energy_tariff.work_hours_per_day.
+	// 2. Los 6 servicios universales de Trabajo (idénticos en Mi Tienda y en el POS)
 	{
-		laborTypes := []struct {
-			suffix string
-			name   string
-			rate   float64
-		}{
-			{"admin", "Trabajo sedentario / oficina", rateAdmin},
-			{"tecnico", "Trabajo profesional / especialista", rateTech},
-			{"agricola", "Trabajo pesado / agrícola (conuco)", rateAgr},
+		type workSvcDef struct {
+			id      string
+			code    string
+			name    string
+			unit    string
+			priceTQ float64
 		}
-		for _, lt := range laborTypes {
-			rateHour := lt.rate
-			rateDay := rateHour * float64(workHours)
+		defs := []workSvcDef{
+			{"00000000-0000-4000-8000-0000000900a1", "900a1", "Trabajo sedentario / oficina (1 hora)", "hora", rateAdmin},
+			{"00000000-0000-4000-8000-0000000900a2", "900a2", "Jornada completa — Trabajo sedentario / oficina", "jornada", rateAdmin * float64(workHours)},
+			{"00000000-0000-4000-8000-0000000900b1", "900t1", "Trabajo profesional / especialista (1 hora)", "hora", rateTech},
+			{"00000000-0000-4000-8000-0000000900b2", "900t2", "Jornada completa — Trabajo profesional / especialista", "jornada", rateTech * float64(workHours)},
+			{"00000000-0000-4000-8000-0000000900c1", "900g1", "Trabajo pesado / agrícola (conuco) (1 hora)", "hora", rateAgr},
+			{"00000000-0000-4000-8000-0000000900c2", "900g2", "Jornada completa — Trabajo pesado / agrícola (conuco)", "jornada", rateAgr * float64(workHours)},
+		}
+		for _, d := range defs {
+			if existingProdIDs[d.id] {
+				continue
+			}
 			items = append(items, VendorCatalogCompactItem{
-				ID:          "svc-work-" + lt.suffix + "-hora",
-				Code:        "900" + lt.suffix[:1] + "1",
-				Name:        lt.name + " (1 hora)",
+				ID:          d.id,
+				ProductID:   d.id,
+				Code:        d.code,
+				Name:        d.name,
 				Category:    "Trabajo",
-				Unit:        "hora",
-				PriceCents:  int64(rateHour*100 + 0.5),
-				Stock:       -1,
-				IsService:   true,
-				IsUniversal: true,
-			})
-			items = append(items, VendorCatalogCompactItem{
-				ID:          "svc-work-" + lt.suffix + "-jornada",
-				Code:        "900" + lt.suffix[:1] + "2",
-				Name:        "Jornada completa — " + lt.name,
-				Category:    "Trabajo",
-				Unit:        "jornada",
-				PriceCents:  int64(rateDay*100 + 0.5),
+				Unit:        d.unit,
+				PriceCents:  int64(d.priceTQ*100 + 0.5),
 				Stock:       -1,
 				IsService:   true,
 				IsUniversal: true,
@@ -953,7 +868,17 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 
 	// Categorías de la tienda del vendedor — el POS las usa tal cual:
 	// 1) categorías creadas/visibles en store_categories
-	// 2) categorías asignadas a los items de la tienda y servicios universales
+	// 2) categorías asignadas a los items de la tienda y servicios universales ("Trabajo")
+	// Se excluyen "Todas" y "Favoritos" de este arreglo porque la barra del POS Android
+	// ya envuelve categories con listOf("Todas") + storeCats + listOf("Favoritos").
+	skipCat := func(n string) bool {
+		t := strings.TrimSpace(n)
+		return t == "" ||
+			strings.EqualFold(t, "Todas") ||
+			strings.EqualFold(t, "Favoritos") ||
+			strings.EqualFold(t, "Trabajo Agricola") ||
+			strings.EqualFold(t, "Trabajo General")
+	}
 	catSet := map[string]bool{}
 	catOrder := []string{}
 	if catRows, cErr := h.Pool.Query(ctx, `
@@ -967,7 +892,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		ORDER BY name`, sellerID); cErr == nil {
 		for catRows.Next() {
 			var n string
-			if catRows.Scan(&n) == nil && n != "" && !catSet[n] {
+			if catRows.Scan(&n) == nil && !skipCat(n) && !catSet[n] {
 				catSet[n] = true
 				catOrder = append(catOrder, n)
 			}
@@ -975,13 +900,13 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		catRows.Close()
 	}
 	for _, ic := range extraItemCats {
-		if ic != "" && !catSet[ic] {
+		if !skipCat(ic) && !catSet[ic] {
 			catSet[ic] = true
 			catOrder = append(catOrder, ic)
 		}
 	}
 	for _, it := range items {
-		if it.Category != "" && !catSet[it.Category] {
+		if !skipCat(it.Category) && !catSet[it.Category] {
 			catSet[it.Category] = true
 			catOrder = append(catOrder, it.Category)
 		}

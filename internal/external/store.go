@@ -2,7 +2,9 @@ package external
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -212,65 +214,142 @@ func (s *Store) ListItems(ctx context.Context, category string) ([]StoreItem, er
 	return items, nil
 }
 
-// ListUniversalServices devuelve los servicios universales del catalogo federado
-// (ej. Trabajo en el Conuco / Jornal Agricola, Trabajo General / Mano Vuelta)
-// que estan automaticamente disponibles en la tienda de todo miembro activo.
+// ListUniversalServices devuelve los 6 servicios universales de trabajo
+// bajo la categoría fija "Trabajo" que están siempre disponibles tanto en Mi Tienda
+// como en el Punto de Venta (POS) Android.
 func (s *Store) ListUniversalServices(ctx context.Context, ownerID *uuid.UUID, ownerName string) ([]StoreItem, error) {
-	rows, err := s.Pool.Query(ctx, `
-		SELECT id, COALESCE(item_code, '90001'), name, COALESCE(description, ''),
-		       COALESCE(parent_category, 'Servicios'), COALESCE(category, 'Trabajo Agricola'),
-		       COALESCE(subcategory, ''), COALESCE(unit, 'hora'), price_per_unit,
-		       COALESCE(image_url, ''), COALESCE(NULLIF(image_icon_url, ''), COALESCE(image_thumb_url, '')),
-		       created_at, updated_at
-		FROM products
-		WHERE node_domain = '__FEDERATION__'
-		  AND is_active = true
-		  AND is_approved = true
-		  AND COALESCE(is_allowed, true) = true
-		  AND COALESCE(is_universal_service, false) = true
-		ORDER BY name ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var list []StoreItem
-	for rows.Next() {
-		var pid uuid.UUID
-		var code, name, desc, parentCat, cat, subcat, unit, imgURL, iconURL string
-		var price float64
-		var createdAt, updatedAt time.Time
-		if err := rows.Scan(&pid, &code, &name, &desc, &parentCat, &cat, &subcat, &unit, &price, &imgURL, &iconURL, &createdAt, &updatedAt); err != nil {
-			continue
+	rateAdmin, rateTech, rateAgr := 1.00, 1.15, 1.30
+	workHours := 8
+	var multJSON string
+	if err := s.Pool.QueryRow(ctx, `
+		SELECT COALESCE(work_multipliers::text,''), COALESCE(workday_hours, 8)
+		FROM node_config WHERE node_domain = $1`, s.NodeDomain,
+	).Scan(&multJSON, &workHours); err == nil && multJSON != "" {
+		var mults map[string]float64
+		if json.Unmarshal([]byte(multJSON), &mults) == nil {
+			if v := mults["admin"]; v > 0 {
+				rateAdmin = v
+			}
+			if v := mults["tecnico"]; v > 0 {
+				rateTech = v
+			}
+			if v := mults["agricola"]; v > 0 {
+				rateAgr = v
+			}
+			if v := mults["technical"]; v > 0 {
+				rateTech = v
+			}
+			if v := mults["agricultural"]; v > 0 {
+				rateAgr = v
+			}
 		}
+	}
+	if workHours <= 0 {
+		workHours = 8
+	}
+
+	type workSvcDef struct {
+		id      string
+		code    string
+		name    string
+		desc    string
+		subcat  string
+		unit    string
+		priceTQ float64
+	}
+	defs := []workSvcDef{
+		{
+			id:      "00000000-0000-4000-8000-0000000900a1",
+			code:    "900a1",
+			name:    "Trabajo sedentario / oficina (1 hora)",
+			desc:    fmt.Sprintf("Hora de trabajo sedentario, oficina, atención o gestión administrativa (%.2f TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.", rateAdmin),
+			subcat:  "Oficina y Gestion",
+			unit:    "hora",
+			priceTQ: rateAdmin,
+		},
+		{
+			id:      "00000000-0000-4000-8000-0000000900a2",
+			code:    "900a2",
+			name:    "Jornada completa — Trabajo sedentario / oficina",
+			desc:    fmt.Sprintf("Jornada completa (%d horas) de trabajo sedentario, oficina, atención o gestión administrativa (%.2f TQ/jornada). Servicio universal.", workHours, rateAdmin*float64(workHours)),
+			subcat:  "Oficina y Gestion",
+			unit:    "jornada",
+			priceTQ: rateAdmin * float64(workHours),
+		},
+		{
+			id:      "00000000-0000-4000-8000-0000000900b1",
+			code:    "900t1",
+			name:    "Trabajo profesional / especialista (1 hora)",
+			desc:    fmt.Sprintf("Hora de trabajo profesional, técnico o especialista calificado (%.2f TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.", rateTech),
+			subcat:  "Profesional y Tecnico",
+			unit:    "hora",
+			priceTQ: rateTech,
+		},
+		{
+			id:      "00000000-0000-4000-8000-0000000900b2",
+			code:    "900t2",
+			name:    "Jornada completa — Trabajo profesional / especialista",
+			desc:    fmt.Sprintf("Jornada completa (%d horas) de trabajo profesional, técnico o especialista calificado (%.2f TQ/jornada). Servicio universal.", workHours, rateTech*float64(workHours)),
+			subcat:  "Profesional y Tecnico",
+			unit:    "jornada",
+			priceTQ: rateTech * float64(workHours),
+		},
+		{
+			id:      "00000000-0000-4000-8000-0000000900c1",
+			code:    "900g1",
+			name:    "Trabajo pesado / agrícola (conuco) (1 hora)",
+			desc:    fmt.Sprintf("Hora de trabajo pesado o agrícola en el conuco / Mano Vuelta (%.2f TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.", rateAgr),
+			subcat:  "Trabajo Agricola y Pesado",
+			unit:    "hora",
+			priceTQ: rateAgr,
+		},
+		{
+			id:      "00000000-0000-4000-8000-0000000900c2",
+			code:    "900g2",
+			name:    "Jornada completa — Trabajo pesado / agrícola (conuco)",
+			desc:    fmt.Sprintf("Jornada completa (%d horas) de trabajo pesado o agrícola en el conuco / Mano Vuelta (%.2f TQ/jornada). Servicio universal.", workHours, rateAgr*float64(workHours)),
+			subcat:  "Trabajo Agricola y Pesado",
+			unit:    "jornada",
+			priceTQ: rateAgr * float64(workHours),
+		},
+	}
+
+	now := time.Now()
+	list := make([]StoreItem, 0, len(defs))
+	for _, d := range defs {
+		pid := uuid.MustParse(d.id)
 		pidCopy := pid
+		priceCents := math.Round(d.priceTQ * 100)
 		list = append(list, StoreItem{
 			ID:                 pidCopy,
 			NodeDomain:         s.NodeDomain,
 			OwnerID:            ownerID,
 			OwnerName:          ownerName,
 			ProductID:          &pidCopy,
-			ItemCode:           code,
-			ProductName:        name,
-			Description:        desc,
-			ParentCategory:     parentCat,
-			Category:           cat,
-			Subcategory:        subcat,
+			ItemCode:           d.code,
+			ProductName:        d.name,
+			Description:        d.desc,
+			ParentCategory:     "Servicios",
+			Category:           "Trabajo",
+			Categories:         []string{"Trabajo"},
+			Subcategory:        d.subcat,
 			Origin:             "internal",
-			Unit:               unit,
+			Unit:               d.unit,
 			QuantityPerUnit:    1,
-			PriceTrueque:       price,
-			BasePrice:          price,
+			PriceTrueque:       priceCents,
+			BasePrice:          priceCents,
 			ExtraCosts:         0,
-			FinalPrice:         price,
+			FinalPrice:         priceCents,
+			PricePerKg:         d.priceTQ,
+			WeightKg:           1,
+			BaseUnit:           d.unit,
 			Stock:              999999,
 			IsService:          true,
 			IsUniversalService: true,
+			ShowInPos:          true,
 			IsActive:           true,
-			ImageURL:           imgURL,
-			ImageIconURL:       iconURL,
-			CreatedAt:          createdAt,
-			UpdatedAt:          updatedAt,
+			CreatedAt:          now,
+			UpdatedAt:          now,
 		})
 	}
 	return list, nil

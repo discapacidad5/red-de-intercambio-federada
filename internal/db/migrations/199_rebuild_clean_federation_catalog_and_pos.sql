@@ -146,7 +146,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 -- 3. Remapear y eliminar productos duplicados y compuestos plantilla en 0 TQ
-CREATE OR REPLACE FUNCTION pg_temp.merge_duplicate_product(dup_name TEXT, canon_name TEXT)
+CREATE OR REPLACE FUNCTION merge_duplicate_product(dup_name TEXT, canon_name TEXT)
 RETURNS VOID AS $$
 DECLARE
     canon_id UUID;
@@ -199,46 +199,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-SELECT pg_temp.merge_duplicate_product('Huevos Frescos', 'Huevos Criollos (Semilibres)');
-SELECT pg_temp.merge_duplicate_product('Fertilizantes Organicos', 'Abonos Organicos');
-SELECT pg_temp.merge_duplicate_product('Carne de Res', 'Carnes de Vacuno');
-SELECT pg_temp.merge_duplicate_product('Mantequilla y Queso', 'Lacteos Artesanales');
-SELECT pg_temp.merge_duplicate_product('Plantas Medicinales (Maceta)', 'Plantulas Medicinales y Aromaticas');
-SELECT pg_temp.merge_duplicate_product('Semillas Criollas Ancestrales', 'Semillas Criollas Adaptadas');
-SELECT pg_temp.merge_duplicate_product('Cacao Puro, Chocolates y Cafe de Montana', 'Cacao, Chocolate y Cafe');
-SELECT pg_temp.merge_duplicate_product('La Tradicional Cafunga de Barlovento', 'Cafunga de Barlovento');
-SELECT pg_temp.merge_duplicate_product('Trabajo de Carpinteria (hora)', 'Carpinteria y Ebanisteria');
-SELECT pg_temp.merge_duplicate_product('Trabajo de Costura (hora)', 'Costura y Confeccion');
-SELECT pg_temp.merge_duplicate_product('Combustibles para Transporte', 'Diesel Agricola');
-SELECT pg_temp.merge_duplicate_product('Sombreros y Gorros', 'Sombrero de Paja (0.2 kg)');
+SELECT merge_duplicate_product('Huevos Frescos', 'Huevos Criollos (Semilibres)');
+SELECT merge_duplicate_product('Fertilizantes Organicos', 'Abonos Organicos');
+SELECT merge_duplicate_product('Carne de Res', 'Carnes de Vacuno');
+SELECT merge_duplicate_product('Mantequilla y Queso', 'Lacteos Artesanales');
+SELECT merge_duplicate_product('Plantas Medicinales (Maceta)', 'Plantulas Medicinales y Aromaticas');
+SELECT merge_duplicate_product('Semillas Criollas Ancestrales', 'Semillas Criollas Adaptadas');
+SELECT merge_duplicate_product('Cacao Puro, Chocolates y Cafe de Montana', 'Cacao, Chocolate y Cafe');
+SELECT merge_duplicate_product('La Tradicional Cafunga de Barlovento', 'Cafunga de Barlovento');
+SELECT merge_duplicate_product('Trabajo de Carpinteria (hora)', 'Carpinteria y Ebanisteria');
+SELECT merge_duplicate_product('Trabajo de Costura (hora)', 'Costura y Confeccion');
+SELECT merge_duplicate_product('Combustibles para Transporte', 'Diesel Agricola');
+SELECT merge_duplicate_product('Sombreros y Gorros', 'Sombrero de Paja (0.2 kg)');
 
 -- Compuestos plantilla con precio 0 de la migración 095 -> remapear al rubro real y eliminar
-SELECT pg_temp.merge_duplicate_product('Biofertilizantes Artesanales', 'Bioinsumos y Preparados');
-SELECT pg_temp.merge_duplicate_product('Controles Biologicos', 'Plaguicidas Naturales');
-SELECT pg_temp.merge_duplicate_product('Chichas Artesanales', 'Bebidas Fermentadas');
-SELECT pg_temp.merge_duplicate_product('Encurtidos Artesanales', 'Encurtidos y Salsas');
-SELECT pg_temp.merge_duplicate_product('Infusiones Naturales Mezcladas', 'Infusiones y Tes');
-SELECT pg_temp.merge_duplicate_product('Vinos Artesanales de Frutas', 'Bebidas Fermentadas');
-SELECT pg_temp.merge_duplicate_product('Licores Artesanales', 'Licores y Destilados');
-SELECT pg_temp.merge_duplicate_product('Cesteria Artesanal', 'Cesta Mediana (1 kg)');
-SELECT pg_temp.merge_duplicate_product('Balsamos y Tinturas Naturales', 'Tinturas Madres y Botica Conuquera');
-SELECT pg_temp.merge_duplicate_product('Cremas y Emulsiones Naturales', 'Cosmetica Natural sin Quimicos');
-SELECT pg_temp.merge_duplicate_product('Mascarillas Faciales Naturales', 'Cosmetica Natural sin Quimicos');
-SELECT pg_temp.merge_duplicate_product('Labiales Naturales', 'Cosmetica Natural sin Quimicos');
-SELECT pg_temp.merge_duplicate_product('Aceite de Coco Cosmetico', 'Cosmetica Natural sin Quimicos');
-SELECT pg_temp.merge_duplicate_product('Arcilla para la Piel', 'Arcilla para Ceramica (cruda)');
-SELECT pg_temp.merge_duplicate_product('Plantas Ornamentales (Maceta)', 'Plantulas Medicinales y Aromaticas');
-SELECT pg_temp.merge_duplicate_product('Plantas Frutales (Maceta)', 'Plantulas Medicinales y Aromaticas');
-SELECT pg_temp.merge_duplicate_product('Matas de Moringa', 'Plantulas Medicinales y Aromaticas');
-SELECT pg_temp.merge_duplicate_product('Moringa en Polvo', 'Hierbas Medicinales Secas');
-SELECT pg_temp.merge_duplicate_product('Gotas de Nin', 'Tinturas Madres y Botica Conuquera');
-SELECT pg_temp.merge_duplicate_product('Harina Buen Pan', 'Harinas Integrales');
-SELECT pg_temp.merge_duplicate_product('Pastelitos de Vegetales Artesanales', 'Panaderia y Masas Caseras');
-SELECT pg_temp.merge_duplicate_product('Hamburguesas Vegetarianas Artesanales', 'Croquetas de Soya Artesanales');
-SELECT pg_temp.merge_duplicate_product('Tacos de Granos Artesanales', 'Torticas Veganas Artesanales');
-SELECT pg_temp.merge_duplicate_product('Frutos Deshidratados Artesanales', 'Dulces y Conservas Tradicionales');
-SELECT pg_temp.merge_duplicate_product('Ajiaco Artesanal', 'Panaderia y Masas Caseras');
-SELECT pg_temp.merge_duplicate_product('Horno de Barro Artesanal', 'Ladrillo de Arcilla');
+SELECT merge_duplicate_product('Biofertilizantes Artesanales', 'Bioinsumos y Preparados');
+SELECT merge_duplicate_product('Controles Biologicos', 'Plaguicidas Naturales');
+SELECT merge_duplicate_product('Chichas Artesanales', 'Bebidas Fermentadas');
+SELECT merge_duplicate_product('Encurtidos Artesanales', 'Encurtidos y Salsas');
+SELECT merge_duplicate_product('Infusiones Naturales Mezcladas', 'Infusiones y Tes');
+SELECT merge_duplicate_product('Vinos Artesanales de Frutas', 'Bebidas Fermentadas');
+SELECT merge_duplicate_product('Licores Artesanales', 'Licores y Destilados');
+SELECT merge_duplicate_product('Cesteria Artesanal', 'Cesta Mediana (1 kg)');
+SELECT merge_duplicate_product('Balsamos y Tinturas Naturales', 'Tinturas Madres y Botica Conuquera');
+SELECT merge_duplicate_product('Cremas y Emulsiones Naturales', 'Cosmetica Natural sin Quimicos');
+SELECT merge_duplicate_product('Mascarillas Faciales Naturales', 'Cosmetica Natural sin Quimicos');
+SELECT merge_duplicate_product('Labiales Naturales', 'Cosmetica Natural sin Quimicos');
+SELECT merge_duplicate_product('Aceite de Coco Cosmetico', 'Cosmetica Natural sin Quimicos');
+SELECT merge_duplicate_product('Arcilla para la Piel', 'Arcilla para Ceramica (cruda)');
+SELECT merge_duplicate_product('Plantas Ornamentales (Maceta)', 'Plantulas Medicinales y Aromaticas');
+SELECT merge_duplicate_product('Plantas Frutales (Maceta)', 'Plantulas Medicinales y Aromaticas');
+SELECT merge_duplicate_product('Matas de Moringa', 'Plantulas Medicinales y Aromaticas');
+SELECT merge_duplicate_product('Moringa en Polvo', 'Hierbas Medicinales Secas');
+SELECT merge_duplicate_product('Gotas de Nin', 'Tinturas Madres y Botica Conuquera');
+SELECT merge_duplicate_product('Harina Buen Pan', 'Harinas Integrales');
+SELECT merge_duplicate_product('Pastelitos de Vegetales Artesanales', 'Panaderia y Masas Caseras');
+SELECT merge_duplicate_product('Hamburguesas Vegetarianas Artesanales', 'Croquetas de Soya Artesanales');
+SELECT merge_duplicate_product('Tacos de Granos Artesanales', 'Torticas Veganas Artesanales');
+SELECT merge_duplicate_product('Frutos Deshidratados Artesanales', 'Dulces y Conservas Tradicionales');
+SELECT merge_duplicate_product('Ajiaco Artesanal', 'Panaderia y Masas Caseras');
+SELECT merge_duplicate_product('Horno de Barro Artesanal', 'Ladrillo de Arcilla');
 
 -- Eliminar cualquier producto plantilla que haya quedado con precio 0 y sin uso en tiendas
 UPDATE external_purchases SET product_id = NULL WHERE product_id IN (SELECT id FROM products WHERE COALESCE(price_per_unit, 0) <= 0);
@@ -254,7 +254,8 @@ WHERE COALESCE(p.price_per_unit, 0) <= 0
   AND NOT EXISTS (SELECT 1 FROM pos_transaction_items pti WHERE pti.product_id = p.id);
 
 -- 4. Tabla maestra de precios energéticos reales (LCA) para todo el catálogo de __FEDERATION__
-CREATE TEMP TABLE clean_federation_prices (
+DROP TABLE IF EXISTS clean_federation_prices;
+CREATE TABLE clean_federation_prices (
     name TEXT PRIMARY KEY,
     unit TEXT NOT NULL,
     base_unit TEXT NOT NULL,
@@ -262,7 +263,7 @@ CREATE TEMP TABLE clean_federation_prices (
     price_per_kg NUMERIC NOT NULL,
     price_per_unit_cents NUMERIC NOT NULL,
     new_description TEXT
-) ON COMMIT DROP;
+);
 
 INSERT INTO clean_federation_prices (name, unit, base_unit, weight_kg, price_per_kg, price_per_unit_cents, new_description) VALUES
 -- Trabajo y Servicios
@@ -632,7 +633,6 @@ SET price_per_unit = fed.price_per_unit,
     base_unit      = fed.base_unit,
     unit           = fed.unit,
     description    = fed.description,
-    catalog_key    = COALESCE(NULLIF(node_p.catalog_key, ''), fed.catalog_key),
     updated_at     = NOW()
 FROM products fed
 WHERE fed.node_domain = '__FEDERATION__'
@@ -700,3 +700,95 @@ SET owner_id = COALESCE(
     (SELECT id FROM users WHERE COALESCE(is_super_admin, false) = true ORDER BY created_at ASC LIMIT 1)
 )
 WHERE owner_id IS NULL;
+
+-- 9. Unificar los 6 servicios universales de Trabajo entre Mi Tienda y el POS Android
+-- Desmarcar los servicios viejos (#90118, #90119, #90121, #90001) como universales
+UPDATE products SET is_universal_service = false WHERE COALESCE(is_universal_service, false) = true;
+
+-- Si en store_items se habían materializado filas de los 4 servicios viejos universales, desactivarlas
+UPDATE store_items
+SET is_active = false
+WHERE item_code IN ('90118', '90119', '90121', '90001')
+   OR product_name IN ('Jornada Agricola Completa', 'Jornada de Trabajo General', 'Jornal Agricola', 'Trabajo en el Conuco (Hora)');
+
+UPDATE products
+SET catalog_key = NULL
+WHERE catalog_key IN (
+    'svc-work-admin-hora', 'svc-work-admin-jornada',
+    'svc-work-tecnico-hora', 'svc-work-tecnico-jornada',
+    'svc-work-agricola-hora', 'svc-work-agricola-jornada'
+) AND id NOT IN (
+    '00000000-0000-4000-8000-0000000900a1',
+    '00000000-0000-4000-8000-0000000900a2',
+    '00000000-0000-4000-8000-0000000900b1',
+    '00000000-0000-4000-8000-0000000900b2',
+    '00000000-0000-4000-8000-0000000900c1',
+    '00000000-0000-4000-8000-0000000900c2'
+);
+
+-- Insertar o actualizar los 6 servicios universales de trabajo bajo la categoría fija 'Trabajo'
+INSERT INTO products (
+    id, node_domain, name, parent_category, category, subcategory, origin, unit, base_unit, weight_kg,
+    description, badge, image_url, price_per_unit, price_per_kg,
+    is_approved, is_system, is_allowed, is_active, is_universal_service,
+    product_code, item_code, catalog_key, item_type,
+    energy_direct, energy_human, energy_inputs, energy_amortization
+) VALUES
+    ('00000000-0000-4000-8000-0000000900a1', '__FEDERATION__', 'Trabajo sedentario / oficina (1 hora)', 'Servicios', 'Trabajo', 'Oficina y Gestion', 'internal', 'hora', 'hora', 1,
+     'Hora de trabajo sedentario, oficina, atencion o gestion administrativa (1.00 TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.', 'Universal', '', 100, 1.00,
+     true, true, true, true, true, 'SVC-900A1', '900a1', 'svc-work-admin-hora', 'service', 0, 1, 0, 0),
+    ('00000000-0000-4000-8000-0000000900a2', '__FEDERATION__', 'Jornada completa — Trabajo sedentario / oficina', 'Servicios', 'Trabajo', 'Oficina y Gestion', 'internal', 'jornada', 'jornada', 1,
+     'Jornada completa (8 horas) de trabajo sedentario, oficina, atencion o gestion administrativa (8.00 TQ/jornada). Servicio universal.', 'Universal', '', 800, 8.00,
+     true, true, true, true, true, 'SVC-900A2', '900a2', 'svc-work-admin-jornada', 'service', 0, 8, 0, 0),
+    ('00000000-0000-4000-8000-0000000900b1', '__FEDERATION__', 'Trabajo profesional / especialista (1 hora)', 'Servicios', 'Trabajo', 'Profesional y Tecnico', 'internal', 'hora', 'hora', 1,
+     'Hora de trabajo profesional, tecnico o especialista calificado (1.15 TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.', 'Universal', '', 115, 1.15,
+     true, true, true, true, true, 'SVC-900T1', '900t1', 'svc-work-tecnico-hora', 'service', 0, 1.15, 0, 0),
+    ('00000000-0000-4000-8000-0000000900b2', '__FEDERATION__', 'Jornada completa — Trabajo profesional / especialista', 'Servicios', 'Trabajo', 'Profesional y Tecnico', 'internal', 'jornada', 'jornada', 1,
+     'Jornada completa (8 horas) de trabajo profesional, tecnico o especialista calificado (9.20 TQ/jornada). Servicio universal.', 'Universal', '', 920, 9.20,
+     true, true, true, true, true, 'SVC-900T2', '900t2', 'svc-work-tecnico-jornada', 'service', 0, 9.2, 0, 0),
+    ('00000000-0000-4000-8000-0000000900c1', '__FEDERATION__', 'Trabajo pesado / agrícola (conuco) (1 hora)', 'Servicios', 'Trabajo', 'Trabajo Agricola y Pesado', 'internal', 'hora', 'hora', 1,
+     'Hora de trabajo pesado o agricola en el conuco / Mano Vuelta (1.30 TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.', 'Universal', '', 130, 1.30,
+     true, true, true, true, true, 'SVC-900G1', '900g1', 'svc-work-agricola-hora', 'service', 0, 1.3, 0, 0),
+    ('00000000-0000-4000-8000-0000000900c2', '__FEDERATION__', 'Jornada completa — Trabajo pesado / agrícola (conuco)', 'Servicios', 'Trabajo', 'Trabajo Agricola y Pesado', 'internal', 'jornada', 'jornada', 1,
+     'Jornada completa (8 horas) de trabajo pesado o agricola en el conuco / Mano Vuelta (10.40 TQ/jornada). Servicio universal.', 'Universal', '', 1040, 10.40,
+     true, true, true, true, true, 'SVC-900G2', '900g2', 'svc-work-agricola-jornada', 'service', 0, 10.4, 0, 0)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    parent_category = 'Servicios',
+    category = 'Trabajo',
+    subcategory = EXCLUDED.subcategory,
+    unit = EXCLUDED.unit,
+    base_unit = EXCLUDED.base_unit,
+    weight_kg = 1,
+    description = EXCLUDED.description,
+    price_per_unit = EXCLUDED.price_per_unit,
+    price_per_kg = EXCLUDED.price_per_kg,
+    is_approved = true,
+    is_system = true,
+    is_allowed = true,
+    is_active = true,
+    is_universal_service = true,
+    item_code = EXCLUDED.item_code,
+    catalog_key = EXCLUDED.catalog_key,
+    item_type = 'service',
+    updated_at = NOW();
+
+-- Asegurar que las categorías de los productos activos en store_items (ej: Insumos Agricolas)
+-- y la categoría fija Trabajo existan en store_categories para el dueño de la tienda
+INSERT INTO store_categories (node_domain, owner_id, name, show_in_pos)
+SELECT DISTINCT si.node_domain, si.owner_id, si.category, true
+FROM store_items si
+WHERE si.owner_id IS NOT NULL
+  AND si.is_active = true
+  AND COALESCE(si.category, '') <> ''
+ON CONFLICT (owner_id, name) DO UPDATE SET show_in_pos = COALESCE(store_categories.show_in_pos, true);
+
+INSERT INTO store_categories (node_domain, owner_id, name, show_in_pos)
+SELECT DISTINCT si.node_domain, si.owner_id, 'Trabajo', true
+FROM store_items si
+WHERE si.owner_id IS NOT NULL
+ON CONFLICT (owner_id, name) DO UPDATE SET show_in_pos = true;
+
+-- Limpiar tablas y funciones auxiliares de migración
+DROP TABLE IF EXISTS clean_federation_prices;
+DROP FUNCTION IF EXISTS merge_duplicate_product(TEXT, TEXT);

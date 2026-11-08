@@ -824,14 +824,15 @@ func (eh *ExternalHandler) deactivateStoreItem(w http.ResponseWriter, r *http.Re
 }
 
 // listStoreCategories lista las categorías propias del dueño (o de la org
-// que administra). El dueño las crea y luego asigna items por nombre.
+// que administra), además de las categorías fijas del sistema ("Trabajo" y "Favoritos")
+// que no se pueden eliminar y que el POS replica exactamente igual.
 func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Request) {
 	userID, err := eh.Auth.GetUserID(r)
 	if err != nil || userID == uuid.Nil {
 		writeError(w, 401, "authentication required")
 		return
 	}
-	// Une: categorías creadas + categorías ya usadas por los items del dueño
+	// Une: categorías creadas + categorías ya usadas por los items activos del dueño
 	// (incluyendo multi-categorías en si.categories y vista admin del nodo)
 	rows, err := eh.Pool.Query(r.Context(), `
 		WITH is_admin AS (
@@ -843,10 +844,11 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 		SELECT DISTINCT ON (name) id, name, src, show_in_pos FROM (
 			SELECT sc.id, sc.name, 'created' AS src, COALESCE(sc.show_in_pos, true) AS show_in_pos, 1 AS prio
 			FROM store_categories sc, is_admin ia
-			WHERE sc.owner_id = $1
+			WHERE (sc.owner_id = $1
 			   OR ia.val = true
 			   OR sc.owner_id IN (SELECT organization_id FROM organization_board_members
-			                      WHERE user_id = $1 AND COALESCE(is_active, true) = true)
+			                      WHERE user_id = $1 AND COALESCE(is_active, true) = true))
+			  AND sc.name NOT IN ('Trabajo Agricola', 'Trabajo General')
 			UNION ALL
 			SELECT NULL::uuid, si.category, 'items', COALESCE(sc2.show_in_pos, true), 2 AS prio
 			FROM store_items si
@@ -871,13 +873,6 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 			  AND TRIM(cat_elem) <> ''
 			  AND si_arr.is_active = true
 			UNION ALL
-			SELECT NULL::uuid, p.category, 'universal', COALESCE(sc3.show_in_pos, true), 3 AS prio
-			FROM products p
-			LEFT JOIN store_categories sc3
-			       ON sc3.owner_id = $1 AND sc3.name = p.category
-			WHERE COALESCE(p.is_universal_service, false) = true
-			  AND COALESCE(p.category, '') <> ''
-			UNION ALL
 			SELECT NULL::uuid, p2.category, 'items', true, 4 AS prio
 			FROM store_items si2
 			CROSS JOIN is_admin ia
@@ -891,22 +886,44 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 		) all_cats
 		ORDER BY name, prio`, userID,
 	)
-	if err != nil {
-		writeError(w, 500, "failed to list categories")
-		return
-	}
-	defer rows.Close()
 	cats := []map[string]interface{}{}
-	for rows.Next() {
-		var id *uuid.UUID
-		var name, src string
-		var showInPos bool
-		if rows.Scan(&id, &name, &src, &showInPos) == nil {
-			entry := map[string]interface{}{"name": name, "source": src, "show_in_pos": showInPos}
-			if id != nil {
-				entry["id"] = id.String()
+	seen := map[string]bool{}
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id *uuid.UUID
+			var name, src string
+			var showInPos bool
+			if rows.Scan(&id, &name, &src, &showInPos) == nil && name != "" {
+				isFixed := strings.EqualFold(name, "Trabajo") || strings.EqualFold(name, "Favoritos")
+				if isFixed {
+					src = "system"
+					showInPos = true
+				}
+				entry := map[string]interface{}{
+					"name":        name,
+					"source":      src,
+					"show_in_pos": showInPos,
+					"is_fixed":    isFixed,
+				}
+				if id != nil && !isFixed {
+					entry["id"] = id.String()
+				}
+				cats = append(cats, entry)
+				seen[strings.ToLower(name)] = true
 			}
-			cats = append(cats, entry)
+		}
+	}
+	// Garantizar que las categorías fijas del sistema ("Trabajo" y "Favoritos") siempre existan en la tienda
+	for _, fixedCat := range []string{"Trabajo", "Favoritos"} {
+		if !seen[strings.ToLower(fixedCat)] {
+			cats = append(cats, map[string]interface{}{
+				"name":        fixedCat,
+				"source":      "system",
+				"show_in_pos": true,
+				"is_fixed":    true,
+			})
+			seen[strings.ToLower(fixedCat)] = true
 		}
 	}
 	writeJSON(w, 200, cats)
@@ -963,6 +980,7 @@ func (eh *ExternalHandler) createStoreCategory(w http.ResponseWriter, r *http.Re
 
 // deleteStoreCategory elimina una categoría propia (los items conservan su
 // texto de categoría — la categoría solo desaparece de la lista).
+// Las categorías fijas del sistema ("Trabajo" y "Favoritos") no se pueden eliminar.
 func (eh *ExternalHandler) deleteStoreCategory(w http.ResponseWriter, r *http.Request) {
 	userID, err := eh.Auth.GetUserID(r)
 	if err != nil || userID == uuid.Nil {
@@ -972,6 +990,12 @@ func (eh *ExternalHandler) deleteStoreCategory(w http.ResponseWriter, r *http.Re
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, 400, "invalid id")
+		return
+	}
+	var catName string
+	_ = eh.Pool.QueryRow(r.Context(), `SELECT name FROM store_categories WHERE id = $1`, id).Scan(&catName)
+	if strings.EqualFold(strings.TrimSpace(catName), "Trabajo") || strings.EqualFold(strings.TrimSpace(catName), "Favoritos") {
+		writeError(w, 400, "Las categorías fijas del sistema (Trabajo, Favoritos) no se pueden eliminar")
 		return
 	}
 	res, err := eh.Pool.Exec(r.Context(), `
@@ -1009,6 +1033,10 @@ func (eh *ExternalHandler) toggleCategoryVisibility(w http.ResponseWriter, r *ht
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		writeError(w, 400, "name requerido")
+		return
+	}
+	if (strings.EqualFold(name, "Trabajo") || strings.EqualFold(name, "Favoritos")) && !req.ShowInPos {
+		writeError(w, 400, "Las categorías fijas Trabajo y Favoritos siempre están visibles en el POS")
 		return
 	}
 	ownerID := userID
