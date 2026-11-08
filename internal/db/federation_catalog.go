@@ -146,9 +146,9 @@ func ClassifyCatalogItemType(name, parent, category, subcategory, unit string, i
 // (saco, kg, g, lb, oz, L, ml, m, cm, docena, unidad, etc.) derivándolo directamente
 // del precio base de la Federación mediante multiplicaciones/divisiones exactas.
 func ComputeVariantPriceCents(fedPricePerUnitCents, fedPricePerKgTQ, fedWeightKg float64, fedUnit, fedBaseUnit, sellUnit string, sellQty float64) float64 {
-	// Normalizar fedPricePerUnitCents si por algún motivo quedó en escala TQ
+	// Normalizar fedPricePerUnitCents solo si tiene decimales (escala TQ fraccionaria)
 	ppuCents := fedPricePerUnitCents
-	if ppuCents > 0 && (ppuCents != math.Trunc(ppuCents) || (ppuCents < 50 && fedPricePerKgTQ > 0 && fedWeightKg > 0 && math.Abs(ppuCents-fedPricePerKgTQ*fedWeightKg) < 0.05)) {
+	if ppuCents > 0 && ppuCents != math.Trunc(ppuCents) {
 		ppuCents = math.Round(ppuCents * 100)
 	}
 	if sellQty <= 0 {

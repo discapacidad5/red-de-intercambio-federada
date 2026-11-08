@@ -577,18 +577,38 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			FROM nfc_terminals WHERE terminal_id = $1 AND is_active = true LIMIT 1`,
 			termHeader,
 		).Scan(&orgID, &deptID, &merchantID)
-		if orgID != nil {
-			sellerID = *orgID
-		} else if deptID != nil {
-			var parentOrg *uuid.UUID
-			_ = h.Pool.QueryRow(ctx, `SELECT parent_organization_id FROM departments WHERE id = $1`, *deptID).Scan(&parentOrg)
-			if parentOrg != nil {
-				sellerID = *parentOrg
+		// Preferir el merchant_user_id si tiene productos en su tienda personal;
+		// de lo contrario usar la organización o departamento.
+		if merchantID != nil {
+			var mCount int
+			_ = h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM store_items WHERE owner_id = $1 AND is_active = true`, *merchantID).Scan(&mCount)
+			if mCount > 0 {
+				sellerID = *merchantID
+			}
+		}
+		if sellerID == uuid.Nil {
+			if orgID != nil {
+				sellerID = *orgID
+			} else if deptID != nil {
+				var parentOrg *uuid.UUID
+				_ = h.Pool.QueryRow(ctx, `SELECT parent_organization_id FROM departments WHERE id = $1`, *deptID).Scan(&parentOrg)
+				if parentOrg != nil {
+					sellerID = *parentOrg
+				} else if merchantID != nil {
+					sellerID = *merchantID
+				}
 			} else if merchantID != nil {
 				sellerID = *merchantID
 			}
-		} else if merchantID != nil {
-			sellerID = *merchantID
+		}
+		// Si aún no se resolvió por nfc_terminals, buscar en nfc_terminal_sessions activas
+		if sellerID == uuid.Nil {
+			_ = h.Pool.QueryRow(ctx, `
+				SELECT merchant_user_id FROM nfc_terminal_sessions
+				WHERE terminal_id = $1 AND is_active = true
+				ORDER BY updated_at DESC LIMIT 1`,
+				termHeader,
+			).Scan(&sellerID)
 		}
 	}
 	if sellerID == uuid.Nil && jwtUserID != uuid.Nil {
@@ -602,6 +622,23 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		_ = h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM store_items WHERE owner_id = $1 AND is_active = true`, jwtUserID).Scan(&jwtItemCount)
 		if termItemCount == 0 && jwtItemCount > 0 {
 			sellerID = jwtUserID
+		}
+	}
+
+	// Si el sellerID actual no tiene store_items propios activos, hacer fallback al dueño principal de store_items del nodo
+	if sellerID != uuid.Nil {
+		var ownCount int
+		_ = h.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM store_items WHERE owner_id = $1 AND is_active = true`, sellerID).Scan(&ownCount)
+		if ownCount == 0 {
+			var fallbackOwner uuid.UUID
+			_ = h.Pool.QueryRow(ctx, `
+				SELECT owner_id FROM store_items
+				WHERE is_active = true AND owner_id IS NOT NULL
+				GROUP BY owner_id ORDER BY COUNT(*) DESC LIMIT 1`,
+			).Scan(&fallbackOwner)
+			if fallbackOwner != uuid.Nil {
+				sellerID = fallbackOwner
+			}
 		}
 	}
 
@@ -691,7 +728,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		) src ON true
 		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
 		   OR si.owner_id = $1 OR si.owner_id IS NULL
-		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin')))
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND COALESCE(u.is_super_admin, false) = true)
 		   OR EXISTS(SELECT 1 FROM organization_board_members obm WHERE obm.organization_id = si.owner_id AND obm.user_id = $1 AND COALESCE(obm.is_active, true) = true)
 		   OR NOT EXISTS(SELECT 1 FROM store_items si_own WHERE si_own.owner_id = $1 AND si_own.is_active = true))
 		  AND si.is_active = true
@@ -720,7 +757,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 				p = priceTrueque
 			}
 			priceCents := int64(p + 0.5)
-			if p > 0 && (p != float64(int64(p)) || p < 50) {
+			if p > 0 && p != float64(int64(p)) {
 				priceCents = int64(p*100 + 0.5)
 			}
 			if noIcons {
@@ -923,7 +960,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		SELECT DISTINCT name FROM store_categories
 		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
 		   OR owner_id = $1
-		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin')))
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND COALESCE(u.is_super_admin, false) = true)
 		   OR owner_id IN (SELECT organization_id FROM organization_board_members WHERE user_id = $1 AND COALESCE(is_active, true) = true)
 		   OR NOT EXISTS(SELECT 1 FROM store_categories sc_own WHERE sc_own.owner_id = $1))
 		  AND COALESCE(show_in_pos, true) = true
@@ -954,7 +991,7 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		SELECT DISTINCT name FROM store_categories
 		WHERE ($1::uuid = '00000000-0000-0000-0000-000000000000'::uuid
 		   OR owner_id = $1
-		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND (u.is_super_admin = true OR u.role IN ('admin', 'super_admin'))))
+		   OR EXISTS(SELECT 1 FROM users u WHERE u.id = $1 AND COALESCE(u.is_super_admin, false) = true))
 		  AND show_in_pos = false`, sellerID); hErr == nil {
 		hidden := map[string]bool{}
 		for hiddenRows.Next() {

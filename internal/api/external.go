@@ -406,19 +406,10 @@ func (eh *ExternalHandler) listStoreItems(w http.ResponseWriter, r *http.Request
 				filtered = append(filtered, it)
 			}
 		}
-		// Si el usuario autenticado es admin/super_admin y su ID no coincide con el owner_id
-		// backfilleado de la tienda del nodo, mostrar todos los ítems activos del nodo.
-		if len(filtered) == 0 && r.URL.Query().Get("owner_id") == "" {
-			var isAdmin bool
-			_ = eh.Pool.QueryRow(r.Context(), `
-				SELECT EXISTS(
-					SELECT 1 FROM users
-					WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))
-				)`, *filterOwnerID).Scan(&isAdmin)
-			if !isAdmin {
-				items = filtered
-			}
-		} else {
+		// Si el usuario autenticado es super_admin o no tiene ítems propios asignados a su ID
+		// personal (porque los ítems fueron backfilleados al dueño de la tienda del nodo),
+		// mostrar todos los ítems activos de la tienda del nodo.
+		if len(filtered) > 0 || r.URL.Query().Get("owner_id") != "" {
 			items = filtered
 		}
 	}
@@ -844,9 +835,9 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 	// (incluyendo multi-categorías en si.categories y vista admin del nodo)
 	rows, err := eh.Pool.Query(r.Context(), `
 		WITH is_admin AS (
-			SELECT EXISTS(
-				SELECT 1 FROM users
-				WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))
+			SELECT (
+				EXISTS(SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_super_admin, false) = true)
+				OR NOT EXISTS(SELECT 1 FROM store_items WHERE owner_id = $1 AND is_active = true)
 			) AS val
 		)
 		SELECT DISTINCT ON (name) id, name, src, show_in_pos FROM (
@@ -1161,7 +1152,7 @@ func (eh *ExternalHandler) updateStoreItem(w http.ResponseWriter, r *http.Reques
 			updated_at        = NOW()
 		WHERE id = $13 AND (
 			owner_id = $14 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $14 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
+			OR EXISTS(SELECT 1 FROM users WHERE id = $14 AND COALESCE(is_super_admin, false) = true)
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $14 AND COALESCE(obm.is_active, true) = true)
@@ -1268,7 +1259,7 @@ func (eh *ExternalHandler) updateItemCategory(w http.ResponseWriter, r *http.Req
 		    updated_at = NOW()
 		WHERE id = $4 AND (
 			owner_id = $5 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $5 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
+			OR EXISTS(SELECT 1 FROM users WHERE id = $5 AND COALESCE(is_super_admin, false) = true)
 			OR EXISTS(SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id
 				  AND obm.user_id = $5 AND COALESCE(obm.is_active, true) = true)
@@ -1316,7 +1307,7 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()
 		WHERE id = $2 AND (
 			owner_id = $3 OR owner_id IS NULL
-			OR EXISTS(SELECT 1 FROM users WHERE id = $3 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin')))
+			OR EXISTS(SELECT 1 FROM users WHERE id = $3 AND COALESCE(is_super_admin, false) = true)
 			OR EXISTS(
 				SELECT 1 FROM organization_board_members obm
 				WHERE obm.organization_id = store_items.owner_id

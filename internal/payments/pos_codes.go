@@ -406,7 +406,8 @@ func ValidateAndResolveCart(ctx context.Context, pool *pgxpool.Pool, sellerID uu
 					       END,
 					       si.stock, COALESCE(si.is_service, false), si.is_active,
 					       (si.owner_id IS NULL OR si.owner_id = $2 OR $2 = '00000000-0000-0000-0000-000000000000'::uuid
-					        OR EXISTS(SELECT 1 FROM users WHERE id = $2 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))))
+					        OR EXISTS(SELECT 1 FROM users WHERE id = $2 AND COALESCE(is_super_admin, false) = true)
+					        OR NOT EXISTS(SELECT 1 FROM store_items si_own WHERE si_own.owner_id = $2 AND si_own.is_active = true))
 					FROM store_items si
 					LEFT JOIN products p ON p.id = si.product_id
 					LEFT JOIN LATERAL (
@@ -475,7 +476,9 @@ func ValidateAndResolveCart(ctx context.Context, pool *pgxpool.Pool, sellerID uu
 					LIMIT 1
 				) fed ON true
 				WHERE si.is_active = true AND si.item_code = $2
-				  AND (si.owner_id = $1 OR EXISTS(SELECT 1 FROM users WHERE id = $1 AND (COALESCE(is_super_admin, false) = true OR role IN ('admin', 'super_admin'))))
+				  AND (si.owner_id = $1
+				       OR EXISTS(SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_super_admin, false) = true)
+				       OR NOT EXISTS(SELECT 1 FROM store_items si_own WHERE si_own.owner_id = $1 AND si_own.is_active = true))
 				LIMIT 1`, sellerID, strings.TrimSpace(in.ItemCode),
 			).Scan(&sid, &linkedProductID, &code, &name, &unit, &livePriceCents, &currentStock, &isService)
 			if err == nil {
@@ -643,11 +646,7 @@ func priceToCents(p float64) int64 {
 	if p <= 0 {
 		return 0
 	}
-	// En store_items y products, algunos precios estan en TQ (ej: 5 o 12.5) y otros ya en centavos (>= 100).
-	// Si tiene decimales o es menor a 100, o si coincide con la convencion de centavos:
-	// Verificamos: en products, price_per_unit de seed suele ser TQ enteros (1, 5, 8) o centavos (>= 100).
-	// Para mantener consistencia con el resto del POS (donde 1 TQ = 100 centavos):
-	if p != math.Trunc(p) || p < 50 {
+	if p != math.Trunc(p) {
 		return int64(math.Round(p * 100))
 	}
 	return int64(math.Round(p))
