@@ -616,7 +616,7 @@ SET price_per_unit = GREATEST(100, COALESCE((
             COALESCE(comp.unit, 'unidad'),
             COALESCE(comp.base_unit, 'kg'),
             COALESCE(comp.unit, 'unidad'),
-            COALESCE(pc.quantity_needed, 1)
+            COALESCE(pc.quantity, 1)
         )
     ))
     FROM product_compositions pc
@@ -742,16 +742,16 @@ INSERT INTO products (
      true, true, true, true, true, 'SVC-900A2', '900a2', 'svc-work-admin-jornada', 'service', 0, 8, 0, 0),
     ('00000000-0000-4000-8000-0000000900b1', '__FEDERATION__', 'Trabajo profesional / especialista (1 hora)', 'Servicios', 'Trabajo', 'Profesional y Tecnico', 'internal', 'hora', 'hora', 1,
      'Hora de trabajo profesional, tecnico o especialista calificado (1.15 TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.', 'Universal', '', 115, 1.15,
-     true, true, true, true, true, 'SVC-900T1', '900t1', 'svc-work-tecnico-hora', 'service', 0, 1.15, 0, 0),
+     true, true, true, true, true, 'SVC-900T1', '900t1', 'svc-work-tecnico-hora', 'service', 0, 1, 0, 0),
     ('00000000-0000-4000-8000-0000000900b2', '__FEDERATION__', 'Jornada completa — Trabajo profesional / especialista', 'Servicios', 'Trabajo', 'Profesional y Tecnico', 'internal', 'jornada', 'jornada', 1,
      'Jornada completa (8 horas) de trabajo profesional, tecnico o especialista calificado (9.20 TQ/jornada). Servicio universal.', 'Universal', '', 920, 9.20,
-     true, true, true, true, true, 'SVC-900T2', '900t2', 'svc-work-tecnico-jornada', 'service', 0, 9.2, 0, 0),
+     true, true, true, true, true, 'SVC-900T2', '900t2', 'svc-work-tecnico-jornada', 'service', 0, 9, 0, 0),
     ('00000000-0000-4000-8000-0000000900c1', '__FEDERATION__', 'Trabajo pesado / agrícola (conuco) (1 hora)', 'Servicios', 'Trabajo', 'Trabajo Agricola y Pesado', 'internal', 'hora', 'hora', 1,
      'Hora de trabajo pesado o agricola en el conuco / Mano Vuelta (1.30 TQ/hora). Servicio universal disponible en todas las tiendas y puntos de venta.', 'Universal', '', 130, 1.30,
-     true, true, true, true, true, 'SVC-900G1', '900g1', 'svc-work-agricola-hora', 'service', 0, 1.3, 0, 0),
+     true, true, true, true, true, 'SVC-900G1', '900g1', 'svc-work-agricola-hora', 'service', 0, 1, 0, 0),
     ('00000000-0000-4000-8000-0000000900c2', '__FEDERATION__', 'Jornada completa — Trabajo pesado / agrícola (conuco)', 'Servicios', 'Trabajo', 'Trabajo Agricola y Pesado', 'internal', 'jornada', 'jornada', 1,
      'Jornada completa (8 horas) de trabajo pesado o agricola en el conuco / Mano Vuelta (10.40 TQ/jornada). Servicio universal.', 'Universal', '', 1040, 10.40,
-     true, true, true, true, true, 'SVC-900G2', '900g2', 'svc-work-agricola-jornada', 'service', 0, 10.4, 0, 0)
+     true, true, true, true, true, 'SVC-900G2', '900g2', 'svc-work-agricola-jornada', 'service', 0, 10, 0, 0)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     parent_category = 'Servicios',
