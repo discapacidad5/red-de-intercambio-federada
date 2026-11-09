@@ -595,7 +595,7 @@ export default function Store() {
             <h2 className="font-semibold flex items-center gap-2"><StoreIcon size={18} />{t('store_my_personal_store', 'Mi Tienda Personal (Productos y Servicios)')}</h2>
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => { setShowCats(!showCats); setShowForm(false); setShowCatalogAdd(false) }} className="btn-secondary flex items-center gap-2 text-sm">
-                <Layers size={16} />{t('store_categories_btn', 'Categorías')}
+                <Layers size={16} />{t('store_categories_btn_pos', 'Categorías y POS')}
               </button>
               <button onClick={() => { setShowCatalogAdd(!showCatalogAdd); setShowForm(false); setShowCats(false) }} className="btn-secondary flex items-center gap-2 text-sm">
                 <Package size={16} />{t('store_add_catalog_btn', 'Agregar del catálogo')}
@@ -616,7 +616,7 @@ export default function Store() {
                 <Layers size={18} />{t('store_categories_title', 'Mis categorías')}
               </h3>
               <p className="text-xs text-purple-700">
-                {t('store_categories_desc', 'Crea tus categorías aquí — luego las seleccionas al editar cada producto y el punto de venta las replica.')}
+                {t('store_categories_desc_pos', 'Crea tus categorías aquí — luego las seleccionas al editar cada producto. Marca o desmarca "En POS" para mostrar u ocultar cada categoría en el punto de venta Android.')}
               </p>
               <div className="flex gap-2">
                 <input
@@ -655,36 +655,41 @@ export default function Store() {
                   }
                   return merged.map((c: any) => {
                     const isFixed = c.is_fixed || c.source === 'system' || c.name?.toLowerCase() === 'trabajo' || c.name?.toLowerCase() === 'favoritos'
+                    // Favoritos la arma el POS y siempre está visible; el resto (incluida Trabajo) se puede ocultar
+                    const canToggle = c.name?.toLowerCase() !== 'favoritos'
+                    const visible = c.show_in_pos !== false
                     return (
-                      <span key={c.id || c.name} className={`inline-flex items-center gap-1.5 text-xs font-bold border px-2.5 py-1 rounded-full ${
-                        c.show_in_pos === false ? 'bg-gray-100 border-gray-300 text-gray-400' : 'bg-white border-purple-300 text-purple-800'
+                      <div key={c.id || c.name} className={`flex items-center gap-2 text-xs font-bold border px-3 py-2 rounded-lg ${
+                        visible ? 'bg-white border-purple-300 text-purple-800' : 'bg-gray-100 border-gray-300 text-gray-500'
                       }`}>
-                        {c.name}
-                        {isFixed ? (
-                          <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded-full">
-                            Fija
+                        <span>{c.name}</span>
+                        {isFixed && (
+                          <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 rounded-full">
+                            {t('store_cat_fixed', 'Fija')}
                           </span>
-                        ) : (
-                          <>
-                            <button
-                              onClick={async () => {
-                                const show = c.show_in_pos === false
+                        )}
+                        {canToggle && (
+                          <label className="flex items-center gap-1 font-normal cursor-pointer" title={t('store_pos_visibility_hint', 'Mostrar en el punto de venta')}>
+                            <input
+                              type="checkbox"
+                              checked={visible}
+                              onChange={async (e) => {
+                                const show = e.target.checked
                                 try {
                                   await api.put('/store/categories/visibility', { name: c.name, show_in_pos: show })
-                                  setStoreCats(prev => prev.map((x: any) => x.name === c.name ? { ...x, show_in_pos: show } : x))
-                                } catch (e: any) { setError(e.message || 'Error') }
+                                  setStoreCats(prev => prev.some((x: any) => x.name === c.name)
+                                    ? prev.map((x: any) => x.name === c.name ? { ...x, show_in_pos: show } : x)
+                                    : [...prev, { ...c, show_in_pos: show }])
+                                } catch (err: any) { setError(err.message || 'Error') }
                               }}
-                              className={c.show_in_pos === false ? 'text-gray-400 hover:text-gray-600' : 'text-purple-600 hover:text-purple-800'}
-                              title={c.show_in_pos === false ? 'Oculta del POS — tocar para mostrar' : 'Visible en POS — tocar para ocultar'}
-                            >
-                              {c.show_in_pos === false ? '👁️‍🗨️' : '👁️'}
-                            </button>
-                            {c.source === 'created' && c.id && (
-                              <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700"><X size={12} /></button>
-                            )}
-                          </>
+                            />
+                            {t('store_show_in_pos', 'En POS')}
+                          </label>
                         )}
-                      </span>
+                        {!isFixed && c.source === 'created' && c.id && (
+                          <button onClick={() => deleteCat(c.id)} className="text-red-500 hover:text-red-700" title={t('store_delete_cat', 'Eliminar categoría')}><X size={12} /></button>
+                        )}
+                      </div>
                     )
                   })
                 })()}
@@ -1247,15 +1252,66 @@ export default function Store() {
                     catFilter === '' ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
                   }`}
                 >{t('store_filter_all', 'Todas')}</button>
-                {allTabs.map((catName) => (
-                  <button
-                    key={catName}
-                    onClick={() => setCatFilter(catFilter === catName ? '' : catName)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
-                      catFilter === catName ? 'bg-trueque-600 text-white border-trueque-600' : 'bg-white text-gray-600 border-gray-300 hover:border-trueque-400'
-                    }`}
-                  >{catName}</button>
-                ))}
+                {allTabs.map((catName) => {
+                  const catObj = storeCats.find((x: any) => (x?.name || '').toLowerCase() === catName.toLowerCase())
+                  const showInPos = catObj ? catObj.show_in_pos !== false : true
+                  const canTogglePos = catName.toLowerCase() !== 'favoritos'
+                  return (
+                    <div
+                      key={catName}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                        catFilter === catName
+                          ? 'bg-trueque-600 text-white border-trueque-600'
+                          : showInPos
+                            ? 'bg-white text-gray-700 border-gray-300 hover:border-trueque-400'
+                            : 'bg-gray-100 text-gray-400 border-gray-300'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setCatFilter(catFilter === catName ? '' : catName)}
+                        className="font-bold"
+                      >
+                        {catName}
+                      </button>
+                      {canTogglePos && (
+                        <label
+                          className={`inline-flex items-center gap-1 text-[10px] font-normal cursor-pointer pl-1 border-l ${
+                            catFilter === catName ? 'border-trueque-300 text-white' : 'border-gray-200 text-gray-500'
+                          }`}
+                          title={t('store_pos_visibility_hint', 'Mostrar u ocultar esta categoría en el Punto de Venta (POS)')}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={showInPos}
+                            onChange={async (e) => {
+                              const nextShow = e.target.checked
+                              try {
+                                await api.put('/store/categories/visibility', { name: catName, show_in_pos: nextShow })
+                                setStoreCats(prev =>
+                                  prev.some((x: any) => (x?.name || '').toLowerCase() === catName.toLowerCase())
+                                    ? prev.map((x: any) => (x?.name || '').toLowerCase() === catName.toLowerCase() ? { ...x, show_in_pos: nextShow } : x)
+                                    : [...prev, { name: catName, show_in_pos: nextShow }]
+                                )
+                              } catch (err: any) {
+                                setError(err.message || 'Error')
+                              }
+                            }}
+                          />
+                          <span>POS</span>
+                        </label>
+                      )}
+                    </div>
+                  )
+                })}
+                <button
+                  type="button"
+                  onClick={() => { setShowCats(!showCats); setShowForm(false); setShowCatalogAdd(false) }}
+                  className="px-2.5 py-1 rounded-full text-xs font-semibold border border-purple-300 bg-purple-50 text-purple-800 hover:bg-purple-100 transition"
+                >
+                  ⚙️ {t('store_manage_cats_btn', 'Ajustar categorías')}
+                </button>
               </div>
             )
           })()}
@@ -1420,16 +1476,15 @@ export default function Store() {
                       <button onClick={() => openTagModal(item)} className="btn-secondary flex-1 flex items-center justify-center gap-1.5 text-xs">
                         <QrCode size={14} /> {t('store_tag_barcode_btn', 'Barra / QR / NFC')}
                       </button>
-                      {!item.is_universal_service && (
-                        <label className="btn-secondary flex items-center gap-1.5 text-xs cursor-pointer" title={t('store_pos_visibility_hint', 'Mostrar en el punto de venta')}>
-                          <input
-                            type="checkbox"
-                            checked={item.show_in_pos !== false}
-                            onChange={(e) => togglePosVisibility(item.id, e.target.checked)}
-                          />
-                          {t('store_show_in_pos', 'En POS')}
-                        </label>
-                      )}
+                      {/* Casilla "En POS" para todos los productos, incluidos los servicios permanentes de Trabajo */}
+                      <label className="btn-secondary flex items-center gap-1.5 text-xs cursor-pointer" title={t('store_pos_visibility_hint', 'Mostrar en el punto de venta')}>
+                        <input
+                          type="checkbox"
+                          checked={item.show_in_pos !== false}
+                          onChange={(e) => togglePosVisibility(item.id, e.target.checked)}
+                        />
+                        {t('store_show_in_pos', 'En POS')}
+                      </label>
                       {!item.is_universal_service && (
                         <button onClick={() => removeItem(item.id)} className="btn-secondary text-red-600"><Trash2 size={16} /></button>
                       )}

@@ -898,7 +898,10 @@ func (eh *ExternalHandler) listStoreCategories(w http.ResponseWriter, r *http.Re
 				isFixed := strings.EqualFold(name, "Trabajo") || strings.EqualFold(name, "Favoritos")
 				if isFixed {
 					src = "system"
-					showInPos = true
+					// Trabajo respeta lo que eligió el dueño; Favoritos siempre visible
+					if strings.EqualFold(name, "Favoritos") {
+						showInPos = true
+					}
 				}
 				entry := map[string]interface{}{
 					"name":        name,
@@ -1035,8 +1038,10 @@ func (eh *ExternalHandler) toggleCategoryVisibility(w http.ResponseWriter, r *ht
 		writeError(w, 400, "name requerido")
 		return
 	}
-	if (strings.EqualFold(name, "Trabajo") || strings.EqualFold(name, "Favoritos")) && !req.ShowInPos {
-		writeError(w, 400, "Las categorías fijas Trabajo y Favoritos siempre están visibles en el POS")
+	// "Trabajo" es fija (no se puede borrar) pero el dueño SÍ puede ocultarla del POS.
+	// "Favoritos" la arma el propio POS y siempre está visible.
+	if strings.EqualFold(name, "Favoritos") && !req.ShowInPos {
+		writeError(w, 400, "La categoría fija Favoritos siempre está visible en el POS")
 		return
 	}
 	ownerID := userID
@@ -1321,8 +1326,6 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		writeError(w, 401, "not authenticated")
 		return
 	}
-	itemID = eh.ensureStoreItemFromProduct(r.Context(), itemID, userID)
-
 	var req struct {
 		ShowInPos bool `json:"show_in_pos"`
 	}
@@ -1330,6 +1333,23 @@ func (eh *ExternalHandler) togglePosVisibility(w http.ResponseWriter, r *http.Re
 		writeError(w, 400, "invalid request body")
 		return
 	}
+
+	// Servicios universales de Trabajo: la visibilidad se guarda por dueño
+	// (no tienen fila propia en store_items).
+	if isUniversalServiceID(itemID) {
+		if _, err := eh.Pool.Exec(r.Context(), `
+			INSERT INTO store_universal_service_prefs (owner_id, product_id, show_in_pos, updated_at)
+			VALUES ($1, $2, $3, NOW())
+			ON CONFLICT (owner_id, product_id) DO UPDATE SET show_in_pos = EXCLUDED.show_in_pos, updated_at = NOW()`,
+			userID, itemID, req.ShowInPos,
+		); err != nil {
+			writeError(w, 500, "failed to update visibility")
+			return
+		}
+		writeJSON(w, 200, map[string]interface{}{"status": "updated", "show_in_pos": req.ShowInPos})
+		return
+	}
+	itemID = eh.ensureStoreItemFromProduct(r.Context(), itemID, userID)
 
 	res, err := eh.Pool.Exec(r.Context(), `
 		UPDATE store_items SET show_in_pos = $1, updated_at = NOW()

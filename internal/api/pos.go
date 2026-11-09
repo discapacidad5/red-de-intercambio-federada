@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -738,9 +739,14 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 		      SELECT 1 FROM store_categories sc
 		      WHERE (sc.owner_id = $1 OR sc.owner_id = si.owner_id)
 		        AND sc.show_in_pos = false
-		        AND (sc.name = si.category OR COALESCE(si.categories, ARRAY[]::text[]) && ARRAY[sc.name])
+		        -- sc.name es VARCHAR: se compara como TEXT; "text[] && varchar[]" no existe en
+		        -- PostgreSQL y hacía fallar toda la consulta (el POS quedaba sin productos).
+		        AND (sc.name::text = si.category OR sc.name::text = ANY(COALESCE(si.categories, ARRAY[]::text[])))
 		  )
 		ORDER BY si.is_service ASC, si.product_name ASC`, sellerID)
+	if err != nil {
+		log.Printf("POS vendor-catalog: error consultando store_items (seller=%s): %v", sellerID, err)
+	}
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -842,8 +848,10 @@ func (h *POSHandler) getVendorCatalog(w http.ResponseWriter, r *http.Request) {
 			{"00000000-0000-4000-8000-0000000900c1", "900g1", "Trabajo pesado / agrícola (conuco) (1 hora)", "hora", rateAgr},
 			{"00000000-0000-4000-8000-0000000900c2", "900g2", "Jornada completa — Trabajo pesado / agrícola (conuco)", "jornada", rateAgr * float64(workHours)},
 		}
+		hiddenUniv := loadHiddenUniversalServices(ctx, h.Pool, sellerID)
+		trabajoHidden := isCategoryHiddenInPOS(ctx, h.Pool, sellerID, "Trabajo")
 		for _, d := range defs {
-			if existingProdIDs[d.id] {
+			if existingProdIDs[d.id] || hiddenUniv[d.id] || trabajoHidden {
 				continue
 			}
 			items = append(items, VendorCatalogCompactItem{

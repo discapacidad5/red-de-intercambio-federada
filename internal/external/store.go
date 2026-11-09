@@ -314,6 +314,22 @@ func (s *Store) ListUniversalServices(ctx context.Context, ownerID *uuid.UUID, o
 		},
 	}
 
+	// Visibilidad en el POS elegida por el dueño (migración 200)
+	hiddenInPos := map[string]bool{}
+	if ownerID != nil {
+		if hRows, hErr := s.Pool.Query(ctx, `
+			SELECT product_id::text FROM store_universal_service_prefs
+			WHERE owner_id = $1 AND show_in_pos = false`, *ownerID); hErr == nil {
+			for hRows.Next() {
+				var hid string
+				if hRows.Scan(&hid) == nil {
+					hiddenInPos[hid] = true
+				}
+			}
+			hRows.Close()
+		}
+	}
+
 	now := time.Now()
 	list := make([]StoreItem, 0, len(defs))
 	for _, d := range defs {
@@ -346,7 +362,7 @@ func (s *Store) ListUniversalServices(ctx context.Context, ownerID *uuid.UUID, o
 			Stock:              999999,
 			IsService:          true,
 			IsUniversalService: true,
-			ShowInPos:          true,
+			ShowInPos:          !hiddenInPos[d.id],
 			IsActive:           true,
 			CreatedAt:          now,
 			UpdatedAt:          now,
